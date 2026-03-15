@@ -8,6 +8,8 @@ from helpers.db import (
     record_port_scan,
     get_port_scan,
     get_recent_events,
+    record_wifi_observation,
+    get_wifi_observations,
 )
 from helpers.scans import scan_ports_for_ip
 import subprocess
@@ -28,6 +30,8 @@ ARP_SCAN = os.environ.get("ARP_SCAN") or shutil.which("arp-scan") or "/usr/sbin/
 BLUETOOTHCTL = os.environ.get("BLUETOOTHCTL") or shutil.which("bluetoothctl") or "/usr/bin/bluetoothctl"
 BASH = shutil.which("bash") or "/usr/bin/bash"
 TIMEOUT = shutil.which("timeout") or "/usr/bin/timeout"
+IW_CMD = shutil.which("iw") or "/usr/sbin/iw"
+IWLIST_CMD = shutil.which("iwlist") or "/sbin/iwlist"
 
 NEW_WINDOW_SECONDS = 300
 
@@ -44,6 +48,8 @@ EVENT_TYPES = [
     "ble_name_changed",
     "new_open_ports",
     "port_scan_failed",
+    "wifi_bssid_new",
+    "wifi_ssid_changed",
 ]
 
 
@@ -252,6 +258,7 @@ def ble_scan() -> List[Dict[str, Any]]:
 
 def ble_nearby() -> Dict[str, Any]:
     cmd = f"{TIMEOUT} 10s {BLUETOOTHCTL} scan on"
+    ensure_bluetooth_adapter()
     try:
         out = run([BASH, "-c", cmd], timeout=25)
     except RuntimeError as exc:
@@ -279,6 +286,61 @@ def ble_nearby() -> Dict[str, Any]:
 
     out_list = [{"addr": a, "name": n} for a, n in devices.items()]
     return {"count": len(out_list), "devices": out_list}
+
+
+def ensure_bluetooth_adapter() -> None:
+    try:
+        run([BASH, "-c", f"{BLUETOOTHCTL} power on"], timeout=10)
+    except RuntimeError:
+        pass
+
+
+def get_wifi_interface() -> Optional[str]:
+    if not IW_CMD:
+        return None
+    try:
+        out = run([IW_CMD, "dev"])
+    except RuntimeError:
+        return None
+    for line in out.splitlines():
+        m = re.search(r"Interface\s+(\w+)", line)
+        if m:
+            return m.group(1)
+    return None
+
+
+def wifi_scan() -> List[Dict[str, Any]]:
+    if not IWLIST_CMD:
+        raise RuntimeError("IWLIST no disponible en el sistema.")
+    iface = get_wifi_interface()
+    if not iface:
+        raise RuntimeError("No se detecta ninguna interfaz WiFi activa.")
+    out = run([IWLIST_CMD, iface, "scan"], timeout=60)
+    entries: List[Dict[str, Any]] = []
+    blocks = re.split(r"\n\s+Cell\s+\d+\s+-\s+", out)
+    for block in blocks[1:]:
+        bssid_match = re.search(r"Address:\s*([0-9A-F:]{17})", block)
+        ssid_match = re.search(r'ESSID:"([^"]*)"', block)
+        channel_match = re.search(r"Channel:(\d+)", block)
+        freq_match = re.search(r"Frequency:([0-9\.\sGHz]+)", block)
+        signal_match = re.search(r"Signal level=(-?\d+)\s*dBm", block)
+        if not bssid_match:
+            continue
+        bssid = bssid_match.group(1).lower()
+        ssid = ssid_match.group(1).strip() if ssid_match else ""
+        channel = channel_match.group(1) if channel_match else ""
+        frequency = freq_match.group(1).strip() if freq_match else ""
+        signal = int(signal_match.group(1)) if signal_match else None
+        entries.append(
+            {
+                "bssid": bssid,
+                "ssid": ssid,
+                "channel": channel,
+                "frequency": frequency,
+                "signal": signal,
+            }
+        )
+    return entries
 
 
 def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
@@ -347,6 +409,7 @@ def ui(request: Request):
     scan = bool(scan_mode)
     scan_lan = scan and scan_mode in ("all", "lan")
     scan_ble = scan and scan_mode in ("all", "ble")
+    scan_wifi = scan and scan_mode == "wifi"
     filter_mode = request.query_params.get("filter", "all")
     search = (request.query_params.get("q") or "").strip().lower()
     event_type_filter = request.query_params.get("event_type")
@@ -367,7 +430,30 @@ def ui(request: Request):
                 ble_scan_results = ble_scan()
             except Exception as e:
                 errors.append(f"Bluetooth scan: {e}")
- 
+        if scan_wifi:
+            try:
+                wifi_scan_results = wifi_scan()
+                for net in wifi_scan_results:
+                    detail_ssid = net.get("ssid") or "<oculto>"
+                    detail = f"{detail_ssid} · canal {net.get('channel','-')}"
+                    obs = record_wifi_observation(
+                        net["bssid"],
+                        net.get("ssid", ""),
+                        net.get("channel"),
+                        net.get("frequency"),
+                    )
+                    if obs.get("created"):
+                        log_event("wifi_bssid_new", "wifi", net["bssid"], detail)
+                    elif obs.get("changed"):
+                        log_event(
+                            "wifi_ssid_changed",
+                            "wifi",
+                            net["bssid"],
+                            f"{obs.get('previous_ssid','')} → {detail_ssid}",
+                        )
+            except Exception as e:
+                errors.append(f"WiFi scan: {e}")
+
     known_lan = get_known("lan")
     known_ble = get_known("ble")
     obs_lan = get_observations("lan")
@@ -472,7 +558,7 @@ def ui(request: Request):
             devices_by_id[identifier] = {
                 "kind": kind,
                 "identifier": identifier,
-                    "ip": None,
+                "ip": None,
                 "vendor": obs_vendor,
                 "alias": known_entry.get("alias", ""),
                 "category": known_entry.get("category", ""),
@@ -489,7 +575,7 @@ def ui(request: Request):
                 "last_scan_fmt": last_scan_fmt,
                 "ports_summary": ", ".join(str(p) for p in ports_list[:6]),
                 "ports_count": len(ports_list),
-                }
+            }
 
         devices = list(devices_by_id.values())
 
@@ -516,6 +602,12 @@ def ui(request: Request):
     for ev in recent_events:
         ts = format_ts(ev.get("timestamp"))
         formatted_events.append({**ev, "timestamp_fmt": ts or ev.get("timestamp", "")})
+    wifi_observations_raw = get_wifi_observations()
+    wifi_count = len(wifi_observations_raw)
+    wifi_observations = [
+        {**obs, "last_seen_fmt": format_ts(obs.get("last_seen"))}
+        for obs in wifi_observations_raw
+    ]
 
     return templates.TemplateResponse(
         "ui.html",
@@ -536,10 +628,13 @@ def ui(request: Request):
                 "lan": "LAN",
                 "ble": "Bluetooth",
                 "all": "Ambos",
+                "wifi": "WiFi",
             }.get(scan_mode, ""),
             "events": formatted_events,
             "event_types": EVENT_TYPES,
             "event_type_filter": event_type_filter,
+            "wifi_observations": wifi_observations,
+            "wifi_count": wifi_count,
         },
     )
 

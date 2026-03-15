@@ -488,7 +488,13 @@
         <input type="hidden" name="event_type" value="{{ event_type_filter or '' }}">
         <button type="submit">Refresh BLE</button>
       </form>
-      <button type="button" class="disabled">Refresh WiFi (pendiente)</button>
+      <form method="get" action="/ui">
+        <input type="hidden" name="scan" value="wifi">
+        <input type="hidden" name="q" value="{{ search }}">
+        <input type="hidden" name="filter" value="{{ filter }}">
+        <input type="hidden" name="event_type" value="{{ event_type_filter or '' }}">
+        <button type="submit">Refresh WiFi</button>
+      </form>
       <button type="button" class="disabled">Export known devices CSV</button>
       <button type="button" class="disabled">Export events CSV</button>
       <button type="button" class="disabled">Export observations CSV</button>
@@ -530,6 +536,11 @@
         <p class="stat-card__value">{{ categories|length }}</p>
         <p class="stat-card__hint">Incluye alias y notas</p>
       </article>
+      <article class="stat-card">
+        <div class="stat-card__label">WiFi APs</div>
+        <p class="stat-card__value">{{ wifi_count }}</p>
+        <p class="stat-card__hint">Últimos {{ wifi_observations|length }}</p>
+      </article>
     </section>
 
     <section class="events-section">
@@ -568,6 +579,32 @@
       </div>
       {% else %}
       <p>No hay eventos recientes.</p>
+      {% endif %}
+    </section>
+
+    <section class="events-section">
+      <div class="events-header">
+        <div>
+          <p class="eyebrow">WiFi Observations</p>
+          <p class="lead">{{ wifi_observations|length }} redes</p>
+        </div>
+      </div>
+      {% if wifi_observations %}
+      <div class="events-list">
+        {% for net in wifi_observations %}
+        <div class="events-card">
+          <div class="event-type">{{ net.ssid or 'SSID oculto' }}</div>
+          <div class="event-detail">
+            BSSID {{ net.bssid }} · Canal {{ net.channel or '-' }}
+          </div>
+          <div class="event-time">
+            {{ net.last_seen_fmt or '-' }} · {{ net.frequency or '-' }}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p>No hay observaciones WiFi.</p>
       {% endif %}
     </section>
 

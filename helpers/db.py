@@ -95,10 +95,12 @@ def init_db() -> None:
         first_seen TEXT,
         last_seen TEXT,
         channel TEXT,
+        frequency TEXT,
         UNIQUE(bssid)
     )
     """
     )
+    _ensure_column(cur, "wifi_observations", "frequency", "TEXT DEFAULT ''")
 
     cur.execute(
         """
@@ -202,6 +204,66 @@ def get_recent_events(limit: int = 25, event_type: Optional[str] = None) -> List
         )
     else:
         cur.execute("SELECT * FROM events ORDER BY timestamp DESC LIMIT ?", (limit,))
+    rows = cur.fetchall()
+    con.close()
+    return [dict(row) for row in rows]
+
+
+def get_wifi_observation(bssid: str) -> Optional[Dict[str, Any]]:
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM wifi_observations WHERE bssid=?", (bssid,))
+    row = cur.fetchone()
+    con.close()
+    if not row:
+        return None
+    return dict(row)
+
+
+def record_wifi_observation(
+    bssid: str,
+    ssid: str,
+    channel: Optional[str],
+    frequency: Optional[str],
+) -> Dict[str, Any]:
+    existing = get_wifi_observation(bssid)
+    now_ts = _now_iso()
+    con = get_connection()
+    cur = con.cursor()
+    if existing:
+        cur.execute(
+            """
+        UPDATE wifi_observations
+        SET ssid=?, last_seen=?, channel=?, frequency=?
+        WHERE bssid=?
+        """,
+            (ssid or existing.get("ssid", ""), now_ts, channel or existing.get("channel", ""), frequency or existing.get("frequency", ""), bssid),
+        )
+        con.commit()
+        con.close()
+        previous_ssid = existing.get("ssid", "") or ""
+        changed_ssid = bool(ssid and previous_ssid and ssid != previous_ssid)
+        return {
+            "created": False,
+            "changed": changed_ssid,
+            "previous_ssid": previous_ssid,
+        }
+    cur.execute(
+        """
+    INSERT INTO wifi_observations(bssid,ssid,first_seen,last_seen,channel,frequency)
+    VALUES(?,?,?,?,?,?)
+    """,
+        (bssid, ssid or "", now_ts, now_ts, channel or "", frequency or ""),
+    )
+    con.commit()
+    con.close()
+    return {"created": True, "changed": False, "previous_ssid": ""}
+
+
+def get_wifi_observations(limit: int = 25) -> List[Dict[str, Any]]:
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM wifi_observations ORDER BY last_seen DESC LIMIT ?", (limit,))
     rows = cur.fetchall()
     con.close()
     return [dict(row) for row in rows]
