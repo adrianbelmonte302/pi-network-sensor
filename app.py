@@ -37,6 +37,16 @@ BASE_CATEGORIES = [
 ]
 
 
+EVENT_TYPES = [
+    "new_device",
+    "ip_changed",
+    "vendor_changed",
+    "ble_name_changed",
+    "new_open_ports",
+    "port_scan_failed",
+]
+
+
 PORT_SCAN_INTERVAL = timedelta(minutes=30)
 
 
@@ -339,6 +349,7 @@ def ui(request: Request):
     scan_ble = scan and scan_mode in ("all", "ble")
     filter_mode = request.query_params.get("filter", "all")
     search = (request.query_params.get("q") or "").strip().lower()
+    event_type_filter = request.query_params.get("event_type")
 
     errors: List[str] = []
 
@@ -389,6 +400,10 @@ def ui(request: Request):
                 obs = observed.get(identifier, {})
                 known_entry = known.get(identifier, {})
                 is_new = _is_new(obs.get("first_seen"))
+                ports_list = port_info.get("ports", []) if port_info else []
+                services_list = port_info.get("services", []) if port_info else []
+                last_scan_ts = port_info.get("last_scan") if port_info else None
+                last_scan_fmt = format_ts(last_scan_ts) if last_scan_ts else None
                 devices_by_id[identifier] = {
                     "kind": kind,
                     "identifier": identifier,
@@ -403,15 +418,22 @@ def ui(request: Request):
                     "last_ip": obs.get("last_ip"),
                     "new": is_new,
                     "notes": known_entry.get("notes", ""),
-                    "ports": port_info.get("ports", []) if port_info else [],
-                    "services": port_info.get("services", []) if port_info else [],
-                    "last_scan": port_info.get("last_scan") if port_info else None,
+                    "ports": ports_list,
+                    "services": services_list,
+                    "last_scan": last_scan_ts,
+                    "last_scan_fmt": last_scan_fmt,
+                    "ports_summary": ", ".join(str(p) for p in ports_list[:6]),
+                    "ports_count": len(ports_list),
                 }
         else:
             for identifier, obs in observed.items():
                 port_info = cache.get(identifier) or get_port_scan(kind, identifier)
                 known_entry = known.get(identifier, {})
                 is_new = _is_new(obs.get("first_seen"))
+                ports_list = port_info.get("ports", []) if port_info else []
+                services_list = port_info.get("services", []) if port_info else []
+                last_scan_ts = port_info.get("last_scan") if port_info else None
+                last_scan_fmt = format_ts(last_scan_ts) if last_scan_ts else None
                 devices_by_id[identifier] = {
                     "kind": kind,
                     "identifier": identifier,
@@ -426,20 +448,27 @@ def ui(request: Request):
                     "last_ip": obs.get("last_ip"),
                     "new": is_new,
                     "notes": known_entry.get("notes", ""),
-                    "ports": port_info.get("ports", []) if port_info else [],
-                    "services": port_info.get("services", []) if port_info else [],
-                    "last_scan": port_info.get("last_scan") if port_info else None,
+                    "ports": ports_list,
+                    "services": services_list,
+                    "last_scan": last_scan_ts,
+                    "last_scan_fmt": last_scan_fmt,
+                    "ports_summary": ", ".join(str(p) for p in ports_list[:6]),
+                    "ports_count": len(ports_list),
                 }
 
         # Include known devices even if they aren't currently observed.
-        for identifier, known_entry in known.items():
-            if identifier in devices_by_id:
-                continue
-            port_info = cache.get(identifier) or get_port_scan(kind, identifier)
-            devices_by_id[identifier] = {
-                "kind": kind,
-                "identifier": identifier,
-                "ip": None,
+            for identifier, known_entry in known.items():
+                if identifier in devices_by_id:
+                    continue
+                port_info = cache.get(identifier) or get_port_scan(kind, identifier)
+                ports_list = port_info.get("ports", []) if port_info else []
+                services_list = port_info.get("services", []) if port_info else []
+                last_scan_ts = port_info.get("last_scan") if port_info else None
+                last_scan_fmt = format_ts(last_scan_ts) if last_scan_ts else None
+                devices_by_id[identifier] = {
+                    "kind": kind,
+                    "identifier": identifier,
+                    "ip": None,
                 "vendor": None,
                 "alias": known_entry.get("alias", ""),
                 "category": known_entry.get("category", ""),
@@ -450,10 +479,13 @@ def ui(request: Request):
                 "last_ip": None,
                 "new": False,
                 "notes": known_entry.get("notes", ""),
-                "ports": port_info.get("ports", []) if port_info else [],
-                "services": port_info.get("services", []) if port_info else [],
-                "last_scan": port_info.get("last_scan") if port_info else None,
-            }
+                "ports": ports_list,
+                "services": services_list,
+                "last_scan": last_scan_ts,
+                "last_scan_fmt": last_scan_fmt,
+                "ports_summary": ", ".join(str(p) for p in ports_list[:6]),
+                "ports_count": len(ports_list),
+                }
 
         devices = list(devices_by_id.values())
 
@@ -475,7 +507,11 @@ def ui(request: Request):
     lan_devices = build_device_list("lan", lan_scan_results, known_lan, obs_lan, port_scan_cache)
     ble_devices = build_device_list("ble", ble_scan_results, known_ble, obs_ble)
 
-    recent_events = get_recent_events()
+    recent_events = get_recent_events(event_type=event_type_filter)
+    formatted_events = []
+    for ev in recent_events:
+        ts = format_ts(ev.get("timestamp"))
+        formatted_events.append({**ev, "timestamp_fmt": ts or ev.get("timestamp", "")})
 
     return templates.TemplateResponse(
         "ui.html",
@@ -497,7 +533,9 @@ def ui(request: Request):
                 "ble": "Bluetooth",
                 "all": "Ambos",
             }.get(scan_mode, ""),
-            "events": recent_events,
+            "events": formatted_events,
+            "event_types": EVENT_TYPES,
+            "event_type_filter": event_type_filter,
         },
     )
 
