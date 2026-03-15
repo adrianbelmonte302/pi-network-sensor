@@ -1,8 +1,16 @@
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from helpers.db import (
+    get_connection,
+    init_db,
+    log_event,
+    record_port_scan,
+    get_port_scan,
+    get_recent_events,
+)
+from helpers.scans import scan_ports_for_ip
 import subprocess
-import sqlite3
 import re
 import shutil
 import os
@@ -13,7 +21,6 @@ from typing import Optional, Dict, Any, List
 app = FastAPI(title="Pi Network Sensor")
 
 BASE_DIR = Path(__file__).parent
-DB_PATH = BASE_DIR / "known.db"
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 # Prefer environment overrides and PATH discovery.
@@ -28,6 +35,12 @@ BASE_CATEGORIES = [
     "pc","laptop","nas","server","iot","mobile","tablet",
     "tv","watch","camera","printer","router","switch","ap","unknown"
 ]
+
+
+PORT_SCAN_INTERVAL = timedelta(minutes=30)
+
+
+init_db()
 
 
 def now() -> datetime:
@@ -58,32 +71,62 @@ def _check_command(path: str, friendly: str):
         raise RuntimeError(f"{friendly} not found. Ensure it is installed and available on PATH.")
 
 
-def upsert_observation(kind: str, identifier: str, ip: Optional[str] = None):
+def upsert_observation(kind: str, identifier: str, ip: Optional[str] = None, vendor: Optional[str] = None, display_name: Optional[str] = None):
     now_ts = now().isoformat()
-    con = db()
+    con = get_connection()
     cur = con.cursor()
 
-    cur.execute("SELECT first_seen, last_ip FROM observations WHERE kind=? AND identifier=?", (kind, identifier))
+    cur.execute(
+        "SELECT first_seen, last_ip, vendor, display_name FROM observations WHERE kind=? AND identifier=?",
+        (kind, identifier),
+    )
     row = cur.fetchone()
 
-    if row:
-        last_ip = ip if ip else row["last_ip"]
-        cur.execute(
-            "UPDATE observations SET last_seen=?, last_ip=? WHERE kind=? AND identifier=?",
-            (now_ts, last_ip, kind, identifier),
-        )
-    else:
-        cur.execute(
-            "INSERT INTO observations(kind,identifier,first_seen,last_seen,last_ip) VALUES(?,?,?,?,?)",
-            (kind, identifier, now_ts, now_ts, ip or ""),
-        )
+    vendor_value = vendor or ""
+    name_value = display_name or ""
 
+    if row:
+        previous_ip = row["last_ip"] or ""
+        previous_vendor = row["vendor"] or ""
+        previous_name = row["display_name"] or ""
+        last_ip = ip if ip else previous_ip
+        updated_vendor = vendor_value or previous_vendor
+        updated_name = name_value or previous_name
+        cur.execute(
+            "UPDATE observations SET last_seen=?, last_ip=?, vendor=?, display_name=? WHERE kind=? AND identifier=?",
+            (now_ts, last_ip, updated_vendor, updated_name, kind, identifier),
+        )
+        con.commit()
+        con.close()
+        return {
+            "created": False,
+            "ip_changed": bool(ip and previous_ip and previous_ip != ip),
+            "vendor_changed": bool(vendor_value and previous_vendor and previous_vendor != vendor_value),
+            "display_name_changed": bool(name_value and previous_name and previous_name != name_value),
+            "previous_ip": previous_ip,
+            "previous_vendor": previous_vendor,
+            "previous_display_name": previous_name,
+        }
+
+    cur.execute(
+        "INSERT INTO observations(kind,identifier,first_seen,last_seen,last_ip,vendor,display_name) VALUES(?,?,?,?,?,?,?)",
+        (kind, identifier, now_ts, now_ts, ip or "", vendor_value, name_value),
+    )
     con.commit()
     con.close()
+    return {
+        "created": True,
+        "ip_changed": False,
+        "vendor_changed": False,
+        "display_name_changed": False,
+        "previous_ip": "",
+        "previous_vendor": "",
+        "previous_display_name": "",
+    }
 
 
 def get_observations(kind: str) -> Dict[str, Any]:
-    con = db()
+    con = get_connection()
     cur = con.cursor()
     cur.execute("SELECT * FROM observations WHERE kind=?", (kind,))
     rows = cur.fetchall()
@@ -101,48 +144,10 @@ def _is_new(first_seen: Optional[str]) -> bool:
     return (now() - first) < timedelta(seconds=NEW_WINDOW_SECONDS)
 
 
-def db():
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    return con
-
-
-def init_db():
-    con = db()
-    cur = con.cursor()
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS known_devices(
-        kind TEXT,
-        identifier TEXT,
-        alias TEXT,
-        category TEXT,
-        notes TEXT,
-        approved INTEGER DEFAULT 1,
-        UNIQUE(kind,identifier)
-    )
-    """)
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS observations(
-        kind TEXT,
-        identifier TEXT,
-        first_seen TEXT,
-        last_seen TEXT,
-        last_ip TEXT,
-        UNIQUE(kind,identifier)
-    )
-    """)
-
-    con.commit()
-    con.close()
-
-
-init_db()
 
 
 def get_known(kind):
-    con = db()
+    con = get_connection()
     cur = con.cursor()
     cur.execute("SELECT * FROM known_devices WHERE kind=?", (kind,))
     rows = cur.fetchall()
@@ -151,7 +156,7 @@ def get_known(kind):
 
 
 def get_categories():
-    con = db()
+    con = get_connection()
     cur = con.cursor()
     cur.execute("SELECT DISTINCT category FROM known_devices")
     rows = [r[0] for r in cur.fetchall() if r[0]]
@@ -160,7 +165,7 @@ def get_categories():
 
 
 def upsert_known(kind, identifier, alias, category, notes, approved):
-    con = db()
+    con = get_connection()
     cur = con.cursor()
 
     cur.execute("""
@@ -175,7 +180,7 @@ def upsert_known(kind, identifier, alias, category, notes, approved):
 
 
 def delete_known(kind: str, identifier: str):
-    con = db()
+    con = get_connection()
     cur = con.cursor()
     cur.execute("DELETE FROM known_devices WHERE kind=? AND identifier=?", (kind, identifier))
     con.commit()
@@ -194,12 +199,20 @@ def lan_scan() -> List[Dict[str, Any]]:
         if m:
             mac = m.group(2).lower()
             ip = m.group(1)
+            vendor = m.group(3).strip()
             hosts.append({
                 "ip": ip,
                 "mac": mac,
-                "vendor": m.group(3),
+                "vendor": vendor,
             })
-            upsert_observation("lan", mac, ip)
+            result = upsert_observation("lan", mac, ip, vendor=vendor)
+            if result.get("created"):
+                log_event("new_device", "lan", mac, f"IP {ip} • vendor {vendor}")
+            else:
+                if result.get("ip_changed"):
+                    log_event("ip_changed", "lan", mac, f"{result['previous_ip']} → {ip}")
+                if result.get("vendor_changed"):
+                    log_event("vendor_changed", "lan", mac, f"{result['previous_vendor']} → {vendor}")
 
     return hosts
 
@@ -218,7 +231,11 @@ def ble_scan() -> List[Dict[str, Any]]:
             continue
 
         results.append({"addr": addr, "name": name})
-        upsert_observation("ble", addr)
+        result = upsert_observation("ble", addr, display_name=name)
+        if result.get("display_name_changed"):
+            log_event("ble_name_changed", "ble", addr, f"{result['previous_display_name']} → {name}")
+        elif result.get("created"):
+            log_event("new_device", "ble", addr, f"Name {name}")
 
     return results
 
@@ -252,6 +269,56 @@ def ble_nearby() -> Dict[str, Any]:
 
     out_list = [{"addr": a, "name": n} for a, n in devices.items()]
     return {"count": len(out_list), "devices": out_list}
+
+
+def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts)
+    except Exception:
+        return None
+
+
+def _should_scan_ports(identifier: str, ip: str, known_entry: Optional[Dict[str, Any]], port_entry: Optional[Dict[str, Any]]) -> bool:
+    if not ip:
+        return False
+    is_new = not known_entry
+    is_unapproved = bool(known_entry and known_entry.get("approved", 0) == 0)
+    if not (is_new or is_unapproved):
+        return False
+    if not port_entry:
+        return True
+    last_scan = _parse_iso(port_entry.get("last_scan"))
+    if not last_scan:
+        return True
+    return (now() - last_scan) > PORT_SCAN_INTERVAL
+
+
+def ensure_port_scan_for_device(device: Dict[str, Any], known_entry: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    identifier = device.get("mac")
+    ip = device.get("ip")
+    if not identifier or not ip:
+        return None
+
+    port_entry = get_port_scan("lan", identifier)
+    if not _should_scan_ports(identifier, ip, known_entry, port_entry):
+        return port_entry
+
+    try:
+        scan_result = scan_ports_for_ip(ip)
+    except RuntimeError as exc:
+        log_event("port_scan_failed", "lan", identifier, str(exc))
+        return port_entry
+
+    new_record = record_port_scan("lan", identifier, ip, identifier, scan_result["ports"], scan_result["services"])
+    previous_ports = set(port_entry.get("ports", [])) if port_entry else set()
+    new_ports = set(new_record.get("ports", []))
+    added_ports = sorted(new_ports - previous_ports)
+    if added_ports:
+        log_event("new_open_ports", "lan", identifier, f"Nuevos puertos: {', '.join(str(p) for p in added_ports)}")
+
+    return new_record
 
 
 
@@ -295,14 +362,30 @@ def ui(request: Request):
     obs_lan = get_observations("lan")
     obs_ble = get_observations("ble")
 
-    def build_device_list(kind: str, scanned: List[Dict[str, Any]], known: Dict[str, Any], observed: Dict[str, Any]):
+    port_scan_cache: Dict[str, Dict[str, Any]] = {}
+    if scan and scan_lan:
+        for host in lan_scan_results:
+            identifier = host.get("mac")
+            entry = ensure_port_scan_for_device(host, known_lan.get(identifier))
+            if entry:
+                port_scan_cache[identifier] = entry
+
+    def build_device_list(
+        kind: str,
+        scanned: List[Dict[str, Any]],
+        known: Dict[str, Any],
+        observed: Dict[str, Any],
+        port_scan_cache: Optional[Dict[str, Dict[str, Any]]] = None,
+    ):
         # Build a single list of devices that includes scanned results,
         # observations, and known devices.
         devices_by_id: Dict[str, Dict[str, Any]] = {}
+        cache = port_scan_cache or {}
 
         if scanned:
             for d in scanned:
                 identifier = d.get("mac") or d.get("addr")
+                port_info = cache.get(identifier) or get_port_scan(kind, identifier)
                 obs = observed.get(identifier, {})
                 known_entry = known.get(identifier, {})
                 is_new = _is_new(obs.get("first_seen"))
@@ -320,9 +403,13 @@ def ui(request: Request):
                     "last_ip": obs.get("last_ip"),
                     "new": is_new,
                     "notes": known_entry.get("notes", ""),
+                    "ports": port_info.get("ports", []) if port_info else [],
+                    "services": port_info.get("services", []) if port_info else [],
+                    "last_scan": port_info.get("last_scan") if port_info else None,
                 }
         else:
             for identifier, obs in observed.items():
+                port_info = cache.get(identifier) or get_port_scan(kind, identifier)
                 known_entry = known.get(identifier, {})
                 is_new = _is_new(obs.get("first_seen"))
                 devices_by_id[identifier] = {
@@ -339,12 +426,16 @@ def ui(request: Request):
                     "last_ip": obs.get("last_ip"),
                     "new": is_new,
                     "notes": known_entry.get("notes", ""),
+                    "ports": port_info.get("ports", []) if port_info else [],
+                    "services": port_info.get("services", []) if port_info else [],
+                    "last_scan": port_info.get("last_scan") if port_info else None,
                 }
 
         # Include known devices even if they aren't currently observed.
         for identifier, known_entry in known.items():
             if identifier in devices_by_id:
                 continue
+            port_info = cache.get(identifier) or get_port_scan(kind, identifier)
             devices_by_id[identifier] = {
                 "kind": kind,
                 "identifier": identifier,
@@ -359,6 +450,9 @@ def ui(request: Request):
                 "last_ip": None,
                 "new": False,
                 "notes": known_entry.get("notes", ""),
+                "ports": port_info.get("ports", []) if port_info else [],
+                "services": port_info.get("services", []) if port_info else [],
+                "last_scan": port_info.get("last_scan") if port_info else None,
             }
 
         devices = list(devices_by_id.values())
@@ -378,8 +472,10 @@ def ui(request: Request):
 
         return [d for d in devices if matches_filter(d)]
 
-    lan_devices = build_device_list("lan", lan_scan_results, known_lan, obs_lan)
+    lan_devices = build_device_list("lan", lan_scan_results, known_lan, obs_lan, port_scan_cache)
     ble_devices = build_device_list("ble", ble_scan_results, known_ble, obs_ble)
+
+    recent_events = get_recent_events()
 
     return templates.TemplateResponse(
         "ui.html",
@@ -401,6 +497,7 @@ def ui(request: Request):
                 "ble": "Bluetooth",
                 "all": "Ambos",
             }.get(scan_mode, ""),
+            "events": recent_events,
         },
     )
 
