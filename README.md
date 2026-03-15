@@ -18,6 +18,7 @@ Sensor ligero para Raspberry Pi con interfaz web para inventario de dispositivos
 - Búsqueda en pantalla por MAC/IP/vendor/alias
 - Botón para forzar escaneo (LAN + Bluetooth) desde la interfaz web
 - Botones independientes para ejecutar escaneos LAN y Bluetooth con indicadores visuales
+- Los dispositivos guardados y sus notas se cargan desde la base de datos incluso sin escanear y permanecen visibles aunque el escaneo falle.
 
 ## Instalación en Raspberry Pi
 

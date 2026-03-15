@@ -29,9 +29,9 @@
     }
 
     main {
-      max-width: 1100px;
+      max-width: 1320px;
       margin: 0 auto;
-      padding: 32px 24px 48px;
+      padding: 32px 32px 48px;
     }
 
     .hero {
@@ -53,6 +53,11 @@
     }
 
     .hero p {
+      margin: 8px 0 0;
+      color: #4b5563;
+    }
+
+    .lead {
       margin: 8px 0 0;
       color: #4b5563;
     }
@@ -229,7 +234,7 @@
 
     th,
     td {
-      padding: 14px 18px;
+      padding: 16px 20px;
       border-bottom: 1px solid rgba(15, 23, 42, 0.06);
     }
 
@@ -300,6 +305,14 @@
       font-weight: 600;
     }
 
+    .column-type {
+      width: 170px;
+    }
+
+    .column-type select {
+      min-width: 150px;
+    }
+
     .table-actions .save {
       background: var(--accent);
       color: #fff;
@@ -312,10 +325,10 @@
     }
 
     @media (max-width: 768px) {
-      th,
-      td {
-        padding: 12px;
-      }
+    th,
+    td {
+      padding: 12px;
+    }
     }
   </style>
 </head>
@@ -410,7 +423,7 @@
           <th>MAC</th>
           <th>Vendor</th>
           <th>Alias</th>
-          <th>Tipo</th>
+          <th class="column-type">Tipo</th>
           <th>Notas</th>
           <th>Historial</th>
           <th>Aprobado</th>
@@ -438,7 +451,7 @@
                   {% endif %}
                 </div>
               </td>
-              <td>
+              <td class="column-type">
                 <select name="category">
                   <option value="">(ninguno)</option>
                   {% for c in categories %}
@@ -482,7 +495,7 @@
           <th>ADDR</th>
           <th>Nombre</th>
           <th>Alias</th>
-          <th>Tipo</th>
+          <th class="column-type">Tipo</th>
           <th>Notas</th>
           <th>Historial</th>
           <th>Aprobado</th>
@@ -509,7 +522,7 @@
                   {% endif %}
                 </div>
               </td>
-              <td>
+              <td class="column-type">
                 <select name="category">
                   <option value="">(ninguno)</option>
                   {% for c in categories %}

@@ -207,20 +207,51 @@ def lan_scan() -> List[Dict[str, Any]]:
 def ble_scan() -> List[Dict[str, Any]]:
     _check_command(BLUETOOTHCTL, "bluetoothctl")
 
-    cmd = f"{TIMEOUT} 10s {BLUETOOTHCTL} -- scan on"
-    out = run([BASH, "-c", cmd], 25)
+    discovery = ble_nearby()
+    devices = discovery.get("devices", [])
+    results: List[Dict[str, Any]] = []
+
+    for device in devices:
+        addr = device.get("addr")
+        name = device.get("name")
+        if not addr:
+            continue
+
+        results.append({"addr": addr, "name": name})
+        upsert_observation("ble", addr)
+
+    return results
+
+
+def ble_nearby() -> Dict[str, Any]:
+    cmd = f"{TIMEOUT} 10s {BLUETOOTHCTL} scan on"
+    try:
+        out = run([BASH, "-c", cmd], timeout=25)
+    except RuntimeError as exc:
+        message = str(exc)
+        if "NotReady" in message or "SetDiscoveryFilter failed" in message:
+            raise RuntimeError(
+                "El adaptador Bluetooth no está listo. Asegúrate de que Bluetooth esté activado."
+            ) from exc
+        raise
 
     devices: Dict[str, str] = {}
 
-    for l in out.splitlines():
-        m = re.search(r"Device\s+([0-9A-F:]{17})\s+(.+)", l)
-        if m:
-            addr = m.group(1).lower()
-            name = m.group(2)
-            devices[addr] = name
-            upsert_observation("ble", addr)
+    for line in out.splitlines():
+        m = re.search(r"Device\s+([0-9A-F:]{17})\s+(.+)$", line)
+        if not m:
+            continue
 
-    return [{"addr": k, "name": v} for k, v in devices.items()]
+        addr = m.group(1).lower()
+        name = m.group(2).strip()
+
+        if name.startswith("RSSI"):
+            continue
+
+        devices[addr] = name
+
+    out_list = [{"addr": a, "name": n} for a, n in devices.items()]
+    return {"count": len(out_list), "devices": out_list}
 
 
 
@@ -244,11 +275,6 @@ def ui(request: Request):
 
     errors: List[str] = []
 
-    known_lan = get_known("lan")
-    known_ble = get_known("ble")
-    obs_lan = get_observations("lan")
-    obs_ble = get_observations("ble")
-
     lan_scan_results: List[Dict[str, Any]] = []
     ble_scan_results: List[Dict[str, Any]] = []
 
@@ -263,6 +289,11 @@ def ui(request: Request):
                 ble_scan_results = ble_scan()
             except Exception as e:
                 errors.append(f"Bluetooth scan: {e}")
+ 
+    known_lan = get_known("lan")
+    known_ble = get_known("ble")
+    obs_lan = get_observations("lan")
+    obs_ble = get_observations("ble")
 
     def build_device_list(kind: str, scanned: List[Dict[str, Any]], known: Dict[str, Any], observed: Dict[str, Any]):
         # Build a single list of devices that includes scanned results,
