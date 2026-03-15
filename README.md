@@ -8,12 +8,15 @@ Sensor ligero para Raspberry Pi con interfaz web para inventario de dispositivos
 - Descubrimiento Bluetooth con `bluetoothctl`
 - Inventario persistente en SQLite
 - Alias, notas, tipo y aprobado/no aprobado
+- Historial de observaciones (primera y última vez visto)
+- Eliminación de dispositivos conocidos
 - Filtros:
   - Todo
   - Solo desconocidos
   - Solo nuevos
   - Solo no aprobados
-- Botones para forzar escaneo LAN / WiFi / BT
+- Búsqueda en pantalla por MAC/IP/vendor/alias
+- Botón para forzar escaneo (LAN + Bluetooth) desde la interfaz web
 
 ## Instalación en Raspberry Pi
 

@@ -19,7 +19,6 @@ pip install -r requirements.txt
 
 echo "[*] Ajustando capacidades..."
 sudo setcap cap_net_raw,cap_net_admin+eip /usr/sbin/arp-scan || true
-sudo setcap cap_net_raw,cap_net_admin+eip /usr/sbin/iw || true
 
 echo "[*] Instalando servicio systemd..."
 sudo cp systemd/$SERVICE_NAME /etc/systemd/system/$SERVICE_NAME

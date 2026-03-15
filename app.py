@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, Form
+from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 import subprocess
@@ -257,7 +257,9 @@ def ui(request: Request):
             errors.append(str(e))
 
     def build_device_list(kind: str, scanned: List[Dict[str, Any]], known: Dict[str, Any], observed: Dict[str, Any]):
-        devices: List[Dict[str, Any]] = []
+        # Build a single list of devices that includes scanned results,
+        # observations, and known devices.
+        devices_by_id: Dict[str, Dict[str, Any]] = {}
 
         if scanned:
             for d in scanned:
@@ -265,44 +267,62 @@ def ui(request: Request):
                 obs = observed.get(identifier, {})
                 known_entry = known.get(identifier, {})
                 is_new = _is_new(obs.get("first_seen"))
-                devices.append(
-                    {
-                        "kind": kind,
-                        "identifier": identifier,
-                        "ip": d.get("ip"),
-                        "vendor": d.get("vendor") or d.get("name"),
-                        "alias": known_entry.get("alias", ""),
-                        "category": known_entry.get("category", ""),
-                        "approved": known_entry.get("approved", 0),
-                        "known": bool(known_entry),
-                        "first_seen": format_ts(obs.get("first_seen")),
-                        "last_seen": format_ts(obs.get("last_seen")),
-                        "last_ip": obs.get("last_ip"),
-                        "new": is_new,
-                        "notes": known_entry.get("notes", ""),
-                    }
-                )
+                devices_by_id[identifier] = {
+                    "kind": kind,
+                    "identifier": identifier,
+                    "ip": d.get("ip"),
+                    "vendor": d.get("vendor") or d.get("name"),
+                    "alias": known_entry.get("alias", ""),
+                    "category": known_entry.get("category", ""),
+                    "approved": known_entry.get("approved", 0),
+                    "known": bool(known_entry),
+                    "first_seen": format_ts(obs.get("first_seen")),
+                    "last_seen": format_ts(obs.get("last_seen")),
+                    "last_ip": obs.get("last_ip"),
+                    "new": is_new,
+                    "notes": known_entry.get("notes", ""),
+                }
         else:
             for identifier, obs in observed.items():
                 known_entry = known.get(identifier, {})
                 is_new = _is_new(obs.get("first_seen"))
-                devices.append(
-                    {
-                        "kind": kind,
-                        "identifier": identifier,
-                        "ip": obs.get("last_ip"),
-                        "vendor": None,
-                        "alias": known_entry.get("alias", ""),
-                        "category": known_entry.get("category", ""),
-                        "approved": known_entry.get("approved", 0),
-                        "known": bool(known_entry),
-                        "first_seen": format_ts(obs.get("first_seen")),
-                        "last_seen": format_ts(obs.get("last_seen")),
-                        "last_ip": obs.get("last_ip"),
-                        "new": is_new,
-                        "notes": known_entry.get("notes", ""),
-                    }
-                )
+                devices_by_id[identifier] = {
+                    "kind": kind,
+                    "identifier": identifier,
+                    "ip": obs.get("last_ip"),
+                    "vendor": None,
+                    "alias": known_entry.get("alias", ""),
+                    "category": known_entry.get("category", ""),
+                    "approved": known_entry.get("approved", 0),
+                    "known": bool(known_entry),
+                    "first_seen": format_ts(obs.get("first_seen")),
+                    "last_seen": format_ts(obs.get("last_seen")),
+                    "last_ip": obs.get("last_ip"),
+                    "new": is_new,
+                    "notes": known_entry.get("notes", ""),
+                }
+
+        # Include known devices even if they aren't currently observed.
+        for identifier, known_entry in known.items():
+            if identifier in devices_by_id:
+                continue
+            devices_by_id[identifier] = {
+                "kind": kind,
+                "identifier": identifier,
+                "ip": None,
+                "vendor": None,
+                "alias": known_entry.get("alias", ""),
+                "category": known_entry.get("category", ""),
+                "approved": known_entry.get("approved", 0),
+                "known": True,
+                "first_seen": None,
+                "last_seen": None,
+                "last_ip": None,
+                "new": False,
+                "notes": known_entry.get("notes", ""),
+            }
+
+        devices = list(devices_by_id.values())
 
         def matches_filter(dev: Dict[str, Any]) -> bool:
             if filter_mode == "unknown" and dev.get("known"):
@@ -359,12 +379,19 @@ def set_lan(
 
 
 @app.post("/set/ble")
-def set_ble(identifier:str=Form(...),
-            alias:str=Form(""),
-            category:str=Form(""),
-            notes:str=Form(""),
-            approved:int=Form(1)):
+def set_ble(
+    identifier: str = Form(...),
+    alias: str = Form(""),
+    category: str = Form(""),
+    notes: str = Form(""),
+    approved: int = Form(0),
+    action: str = Form("save"),
+    return_url: str = Form("/ui"),
+):
 
-    upsert_known("ble",identifier,alias,category,notes,approved)
+    if action == "delete":
+        delete_known("ble", identifier)
+    else:
+        upsert_known("ble", identifier, alias, category, notes, approved)
 
-    return RedirectResponse("/ui",303)
+    return RedirectResponse(return_url or "/ui", status_code=303)

@@ -5,204 +5,259 @@
 <title>Pi Network Sensor</title>
 
 <style>
-
-body{
-font-family:Arial;
-margin:20px;
+body {
+  font-family: Arial, sans-serif;
+  margin: 20px;
 }
 
-table{
-border-collapse:collapse;
-width:100%;
-margin-bottom:40px;
+header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
 }
 
-th,td{
-border:1px solid #ddd;
-padding:6px;
+header form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
-th{
-background:#f0f0f0;
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 32px;
 }
 
-select,input,textarea{
-width:100%;
+th, td {
+  border: 1px solid #ddd;
+  padding: 6px;
+  vertical-align: top;
 }
 
-textarea{
-height:40px;
+th {
+  background: #f0f0f0;
+  text-align: left;
 }
 
-.new{
-color:red;
-font-weight:bold;
+input[type="text"], select, textarea {
+  width: 100%;
+  box-sizing: border-box;
 }
 
+textarea {
+  height: 50px;
+  resize: vertical;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 12px;
+  border-radius: 4px;
+  background: #eee;
+  color: #333;
+  margin-right: 4px;
+}
+
+.badge.new {
+  background: #ffe4e1;
+  color: #a00;
+}
+
+.badge.unknown {
+  background: #e8f4ff;
+  color: #035;
+}
+
+.errors {
+  border: 1px solid #c00;
+  background: #fee;
+  padding: 10px;
+  margin-bottom: 16px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.actions button {
+  min-width: 80px;
+}
 </style>
-
 </head>
 
 <body>
 
 <h1>Network Sensor</h1>
 
+<header>
+  <form method="get" action="/ui">
+    <label>
+      Search:
+      <input type="text" name="q" placeholder="MAC / IP / vendor" value="{{ search }}">
+    </label>
+
+    <label>
+      Filter:
+      <select name="filter">
+        <option value="all" {% if filter == 'all' %}selected{% endif %}>All</option>
+        <option value="unknown" {% if filter == 'unknown' %}selected{% endif %}>Unknown</option>
+        <option value="new" {% if filter == 'new' %}selected{% endif %}>New</option>
+        <option value="unapproved" {% if filter == 'unapproved' %}selected{% endif %}>Unapproved</option>
+      </select>
+    </label>
+
+    <button type="submit">Apply</button>
+    <button type="submit" name="scan" value="1">Scan now</button>
+  </form>
+</header>
+
+{% if errors %}
+<div class="errors">
+  <strong>Errors:</strong>
+  <ul>
+    {% for err in errors %}
+    <li>{{ err }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
 
 <h2>LAN Devices</h2>
-
 <table>
+  <tr>
+    <th>IP</th>
+    <th>MAC</th>
+    <th>Vendor</th>
+    <th>Alias</th>
+    <th>Type</th>
+    <th>Notes</th>
+    <th>First / Last</th>
+    <th>Approved</th>
+    <th>Actions</th>
+  </tr>
 
-<tr>
-<th>IP</th>
-<th>MAC</th>
-<th>Vendor</th>
-<th>Alias</th>
-<th>Type</th>
-<th>Approved</th>
-<th>Save</th>
-</tr>
+  {% for h in lan %}
+  <tr>
+    <form method="post" action="/set/lan">
+      <td>{{ h.ip or "-" }}</td>
 
-{% for h in lan %}
+      <td>
+        {{ h.identifier }}
+        <input type="hidden" name="identifier" value="{{ h.identifier }}">
+      </td>
 
-<tr>
+      <td>{{ h.vendor or "-" }}</td>
 
-<form method="post" action="/set/lan">
+      <td>
+        <input type="text" name="alias" value="{{ h.alias }}">
+      </td>
 
-<td>{{h.ip}}</td>
+      <td>
+        <select name="category">
+          <option value="">(none)</option>
+          {% for c in categories %}
+          <option value="{{ c }}" {% if h.category == c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </td>
 
-<td>
-{{h.mac}}
-<input type="hidden" name="identifier" value="{{h.mac}}">
-</td>
+      <td>
+        <textarea name="notes">{{ h.notes }}</textarea>
+      </td>
 
-<td>{{h.vendor}}</td>
+      <td>
+        {% if h.first_seen %}
+          <div>First: {{ h.first_seen }}</div>
+          <div>Last: {{ h.last_seen }}</div>
+          <div>IP: {{ h.last_ip or "-" }}</div>
+        {% else %}
+          <span>-</span>
+        {% endif %}
+      </td>
 
-<td>
-<input name="alias" value="{{known_lan.get(h.mac,{}).get('alias','')}}">
-</td>
+      <td>
+        <input type="hidden" name="approved" value="0">
+        <input type="checkbox" name="approved" value="1" {% if h.approved == 1 %}checked{% endif %}>
+      </td>
 
-<td>
-
-<select name="category">
-
-<option value=""></option>
-
-{% for c in categories %}
-
-<option value="{{c}}"
-{% if known_lan.get(h.mac,{}).get("category")==c %}
-selected
-{% endif %}
->
-{{c}}
-</option>
-
-{% endfor %}
-
-</select>
-
-</td>
-
-<td>
-
-<input type="checkbox"
-name="approved"
-value="1"
-{% if known_lan.get(h.mac,{}).get("approved")==1 %}
-checked
-{% endif %}
->
-
-</td>
-
-<td>
-<button type="submit">save</button>
-</td>
-
-</form>
-
-</tr>
-
-{% endfor %}
-
+      <td class="actions">
+        <input type="hidden" name="return_url" value="{{ return_url }}">
+        <button type="submit" name="action" value="save">Save</button>
+        <button type="submit" name="action" value="delete" onclick="return confirm('Delete this device?');">Delete</button>
+      </td>
+    </form>
+  </tr>
+  {% endfor %}
 </table>
 
-
-
 <h2>Bluetooth Devices</h2>
-
 <table>
+  <tr>
+    <th>ADDR</th>
+    <th>Name</th>
+    <th>Alias</th>
+    <th>Type</th>
+    <th>Notes</th>
+    <th>First / Last</th>
+    <th>Approved</th>
+    <th>Actions</th>
+  </tr>
 
-<tr>
-<th>ADDR</th>
-<th>Name</th>
-<th>Alias</th>
-<th>Type</th>
-<th>Approved</th>
-<th>Save</th>
-</tr>
+  {% for b in ble %}
+  <tr>
+    <form method="post" action="/set/ble">
+      <td>
+        {{ b.identifier }}
+        <input type="hidden" name="identifier" value="{{ b.identifier }}">
+      </td>
 
-{% for b in ble %}
+      <td>{{ b.vendor or "-" }}</td>
 
-<tr>
+      <td>
+        <input type="text" name="alias" value="{{ b.alias }}">
+      </td>
 
-<form method="post" action="/set/ble">
+      <td>
+        <select name="category">
+          <option value="">(none)</option>
+          {% for c in categories %}
+          <option value="{{ c }}" {% if b.category == c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </td>
 
-<td>
-{{b.addr}}
-<input type="hidden" name="identifier" value="{{b.addr}}">
-</td>
+      <td>
+        <textarea name="notes">{{ b.notes }}</textarea>
+      </td>
 
-<td>{{b.name}}</td>
+      <td>
+        {% if b.first_seen %}
+          <div>First: {{ b.first_seen }}</div>
+          <div>Last: {{ b.last_seen }}</div>
+        {% else %}
+          <span>-</span>
+        {% endif %}
+      </td>
 
-<td>
-<input name="alias" value="{{known_ble.get(b.addr,{}).get('alias','')}}">
-</td>
+      <td>
+        <input type="hidden" name="approved" value="0">
+        <input type="checkbox" name="approved" value="1" {% if b.approved == 1 %}checked{% endif %}>
+      </td>
 
-<td>
-
-<select name="category">
-
-<option value=""></option>
-
-{% for c in categories %}
-
-<option value="{{c}}"
-{% if known_ble.get(b.addr,{}).get("category")==c %}
-selected
-{% endif %}
->
-{{c}}
-</option>
-
-{% endfor %}
-
-</select>
-
-</td>
-
-<td>
-
-<input type="checkbox"
-name="approved"
-value="1"
-{% if known_ble.get(b.addr,{}).get("approved")==1 %}
-checked
-{% endif %}
->
-
-</td>
-
-<td>
-<button type="submit">save</button>
-</td>
-
-</form>
-
-</tr>
-
-{% endfor %}
-
+      <td class="actions">
+        <input type="hidden" name="return_url" value="{{ return_url }}">
+        <button type="submit" name="action" value="save">Save</button>
+        <button type="submit" name="action" value="delete" onclick="return confirm('Delete this device?');">Delete</button>
+      </td>
+    </form>
+  </tr>
+  {% endfor %}
 </table>
 
 </body>

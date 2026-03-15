@@ -4,7 +4,7 @@ After=network.target bluetooth.service
 Wants=network.target
 
 [Service]
-User=adrian
+User=
 WorkingDirectory=/opt/pi-network-sensor
 Environment="PATH=/opt/pi-network-sensor/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStart=/opt/pi-network-sensor/.venv/bin/uvicorn app:app --host 0.0.0.0 --port 8088
