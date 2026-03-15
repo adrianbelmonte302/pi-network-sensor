@@ -240,8 +240,8 @@ def ble_scan() -> List[Dict[str, Any]]:
         if not addr:
             continue
 
-        results.append({"addr": addr, "name": name})
-        result = upsert_observation("ble", addr, display_name=name)
+        results.append({"addr": addr, "name": name, "vendor": name})
+        result = upsert_observation("ble", addr, vendor=name, display_name=name)
         if result.get("display_name_changed"):
             log_event("ble_name_changed", "ble", addr, f"{result['previous_display_name']} → {name}")
         elif result.get("created"):
@@ -404,11 +404,12 @@ def ui(request: Request):
                 services_list = port_info.get("services", []) if port_info else []
                 last_scan_ts = port_info.get("last_scan") if port_info else None
                 last_scan_fmt = format_ts(last_scan_ts) if last_scan_ts else None
+                obs_vendor = obs.get("vendor") or obs.get("display_name")
                 devices_by_id[identifier] = {
                     "kind": kind,
                     "identifier": identifier,
                     "ip": d.get("ip"),
-                    "vendor": d.get("vendor") or d.get("name"),
+                    "vendor": d.get("vendor") or d.get("name") or obs_vendor,
                     "alias": known_entry.get("alias", ""),
                     "category": known_entry.get("category", ""),
                     "approved": known_entry.get("approved", 0),
@@ -434,11 +435,12 @@ def ui(request: Request):
                 services_list = port_info.get("services", []) if port_info else []
                 last_scan_ts = port_info.get("last_scan") if port_info else None
                 last_scan_fmt = format_ts(last_scan_ts) if last_scan_ts else None
+                obs_vendor = obs.get("vendor") or obs.get("display_name")
                 devices_by_id[identifier] = {
                     "kind": kind,
                     "identifier": identifier,
                     "ip": obs.get("last_ip"),
-                    "vendor": None,
+                    "vendor": obs_vendor,
                     "alias": known_entry.get("alias", ""),
                     "category": known_entry.get("category", ""),
                     "approved": known_entry.get("approved", 0),
@@ -457,19 +459,21 @@ def ui(request: Request):
                 }
 
         # Include known devices even if they aren't currently observed.
-            for identifier, known_entry in known.items():
-                if identifier in devices_by_id:
-                    continue
-                port_info = cache.get(identifier) or get_port_scan(kind, identifier)
-                ports_list = port_info.get("ports", []) if port_info else []
-                services_list = port_info.get("services", []) if port_info else []
-                last_scan_ts = port_info.get("last_scan") if port_info else None
-                last_scan_fmt = format_ts(last_scan_ts) if last_scan_ts else None
-                devices_by_id[identifier] = {
-                    "kind": kind,
-                    "identifier": identifier,
+        for identifier, known_entry in known.items():
+            if identifier in devices_by_id:
+                continue
+            port_info = cache.get(identifier) or get_port_scan(kind, identifier)
+            obs = observed.get(identifier, {})
+            obs_vendor = obs.get("vendor") or obs.get("display_name")
+            ports_list = port_info.get("ports", []) if port_info else []
+            services_list = port_info.get("services", []) if port_info else []
+            last_scan_ts = port_info.get("last_scan") if port_info else None
+            last_scan_fmt = format_ts(last_scan_ts) if last_scan_ts else None
+            devices_by_id[identifier] = {
+                "kind": kind,
+                "identifier": identifier,
                     "ip": None,
-                "vendor": None,
+                "vendor": obs_vendor,
                 "alias": known_entry.get("alias", ""),
                 "category": known_entry.get("category", ""),
                 "approved": known_entry.get("approved", 0),

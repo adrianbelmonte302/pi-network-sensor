@@ -591,7 +591,6 @@
           <th>Vendor</th>
           <th>Alias</th>
           <th class="column-type">Tipo</th>
-          <th>Notas</th>
           <th>Ports</th>
           <th>Last scan</th>
           <th>Historial</th>
@@ -619,6 +618,7 @@
                     <span class="badge new">nuevo</span>
                   {% endif %}
                 </div>
+                <textarea name="notes" rows="2" placeholder="Notas">{{ h.notes }}</textarea>
               </td>
               <td class="column-type">
                 <select name="category">
@@ -627,9 +627,6 @@
                     <option value="{{ c }}" {% if h.category == c %}selected{% endif %}>{{ c }}</option>
                   {% endfor %}
                 </select>
-              </td>
-              <td>
-                <textarea name="notes">{{ h.notes }}</textarea>
               </td>
               <td>
                 {% if h.ports %}
@@ -686,7 +683,6 @@
           <th>Nombre</th>
           <th>Alias</th>
           <th class="column-type">Tipo</th>
-          <th>Notas</th>
           <th>Historial</th>
           <th>Aprobado</th>
           <th>Acciones</th>
@@ -711,6 +707,7 @@
                     <span class="badge new">nuevo</span>
                   {% endif %}
                 </div>
+                <textarea name="notes" rows="2" placeholder="Notas">{{ b.notes }}</textarea>
               </td>
               <td class="column-type">
                 <select name="category">
@@ -719,9 +716,6 @@
                     <option value="{{ c }}" {% if b.category == c %}selected{% endif %}>{{ c }}</option>
                   {% endfor %}
                 </select>
-              </td>
-              <td>
-                <textarea name="notes">{{ b.notes }}</textarea>
               </td>
               <td>
                 {% if b.first_seen %}
