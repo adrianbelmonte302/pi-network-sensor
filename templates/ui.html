@@ -1,264 +1,549 @@
 <!doctype html>
 <html>
 <head>
-<meta charset="utf-8"/>
-<title>Pi Network Sensor</title>
+  <meta charset="utf-8"/>
+  <title>Pi Network Sensor</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f3f4f8;
+      --surface: #ffffff;
+      --border: #dee2ff;
+      --text: #1f2040;
+      --muted: #6366f1;
+      --accent: #4f46e5;
+      --danger: #ef4444;
+      --success: #10b981;
+    }
 
-<style>
-body {
-  font-family: Arial, sans-serif;
-  margin: 20px;
-}
+    * {
+      box-sizing: border-box;
+    }
 
-header {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 16px;
-}
+    body {
+      margin: 0;
+      font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(circle at top, rgba(79, 70, 229, 0.15), transparent 40%),
+        var(--bg);
+      color: var(--text);
+    }
 
-header form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 24px 48px;
+    }
 
-table {
-  border-collapse: collapse;
-  width: 100%;
-  margin-bottom: 32px;
-}
+    .hero {
+      background: var(--surface);
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 24px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
 
-th, td {
-  border: 1px solid #ddd;
-  padding: 6px;
-  vertical-align: top;
-}
+    .hero h1 {
+      margin: 0;
+      font-size: 1.9rem;
+    }
 
-th {
-  background: #f0f0f0;
-  text-align: left;
-}
+    .hero p {
+      margin: 8px 0 0;
+      color: #4b5563;
+    }
 
-input[type="text"], select, textarea {
-  width: 100%;
-  box-sizing: border-box;
-}
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--muted);
+      font-size: 0.75rem;
+      margin: 0 0 6px;
+    }
 
-textarea {
-  height: 50px;
-  resize: vertical;
-}
+    .search-bar {
+      flex: 1 1 350px;
+      display: grid;
+      gap: 12px;
+    }
 
-.badge {
-  display: inline-block;
-  padding: 2px 6px;
-  font-size: 12px;
-  border-radius: 4px;
-  background: #eee;
-  color: #333;
-  margin-right: 4px;
-}
+    .field-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
 
-.badge.new {
-  background: #ffe4e1;
-  color: #a00;
-}
+    label {
+      display: flex;
+      flex-direction: column;
+      font-size: 0.85rem;
+      color: #52525b;
+      font-weight: 600;
+    }
 
-.badge.unknown {
-  background: #e8f4ff;
-  color: #035;
-}
+    input[type="text"],
+    select {
+      margin-top: 4px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      width: 100%;
+      font-size: 0.95rem;
+      transition: border 0.2s ease;
+    }
 
-.errors {
-  border: 1px solid #c00;
-  background: #fee;
-  padding: 10px;
-  margin-bottom: 16px;
-}
+    input[type="text"]:focus,
+    select:focus {
+      border-color: var(--accent);
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+    }
 
-.actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
 
-.actions button {
-  min-width: 80px;
-}
-</style>
+    .button {
+      border: none;
+      border-radius: 999px;
+      padding: 10px 18px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      font-weight: 600;
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .button.primary {
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 10px 25px rgba(79, 70, 229, 0.3);
+    }
+
+    .button.secondary {
+      background: rgba(99, 102, 241, 0.1);
+      color: var(--muted);
+    }
+
+    .button:active {
+      transform: translateY(1px);
+    }
+
+    .scan-buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .scan-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    }
+
+    .scan-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .scan-btn:hover {
+      border-color: var(--accent);
+    }
+
+    .scan-panel {
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .scan-status {
+      color: #374151;
+      font-size: 0.9rem;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 18px;
+      margin-bottom: 32px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border-radius: 14px;
+      padding: 18px;
+      border: 1px solid rgba(226, 232, 240, 0.75);
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+    }
+
+    .stat-card__label {
+      font-size: 0.8rem;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 6px;
+    }
+
+    .stat-card__value {
+      font-size: 2rem;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .stat-card__hint {
+      margin: 4px 0 0;
+      font-size: 0.9rem;
+      color: #4b5563;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+      margin-bottom: 32px;
+    }
+
+    thead {
+      background: rgba(99, 102, 241, 0.08);
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.18em;
+    }
+
+    th,
+    td {
+      padding: 14px 18px;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+    }
+
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    td {
+      font-size: 0.95rem;
+      vertical-align: top;
+    }
+
+    .status-tags {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 2px 10px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .badge.new {
+      background: rgba(239, 68, 68, 0.1);
+      color: var(--danger);
+    }
+
+    .badge.unknown {
+      background: rgba(59, 130, 246, 0.1);
+      color: #1d4ed8;
+    }
+
+    .badge.approved {
+      background: rgba(16, 185, 129, 0.1);
+      color: var(--success);
+    }
+
+    textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      min-height: 52px;
+      font-family: inherit;
+      resize: vertical;
+    }
+
+    .table-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .table-actions button {
+      border-radius: 8px;
+      border: none;
+      padding: 6px 12px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .table-actions .save {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .table-actions .delete {
+      background: transparent;
+      border: 1px solid rgba(239, 68, 68, 0.5);
+      color: var(--danger);
+    }
+
+    @media (max-width: 768px) {
+      th,
+      td {
+        padding: 12px;
+      }
+    }
+  </style>
 </head>
-
 <body>
+  <main>
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Inventario en vivo</p>
+        <h1>Network Sensor</h1>
+        <p class="lead">Visualiza, etiqueta y aprueba los dispositivos LAN y Bluetooth que detecta tu Raspberry Pi.</p>
+      </div>
+      <form class="search-bar" method="get" action="/ui">
+        <div class="field-group">
+          <label>
+            Buscar
+            <input type="text" name="q" placeholder="MAC / IP / vendor / alias" value="{{ search }}">
+          </label>
+          <label>
+            Filtro
+            <select name="filter">
+              <option value="all" {% if filter == 'all' %}selected{% endif %}>Todos</option>
+              <option value="unknown" {% if filter == 'unknown' %}selected{% endif %}>Desconocidos</option>
+              <option value="new" {% if filter == 'new' %}selected{% endif %}>Nuevos</option>
+              <option value="unapproved" {% if filter == 'unapproved' %}selected{% endif %}>No aprobados</option>
+            </select>
+          </label>
+        </div>
+        <div class="actions">
+          <button type="submit" class="button secondary">Aplicar filtros</button>
+          <div class="scan-buttons">
+            <button type="submit" name="scan" value="lan" class="scan-btn {% if scan_mode == 'lan' %}active{% endif %}">Escanear LAN</button>
+            <button type="submit" name="scan" value="ble" class="scan-btn {% if scan_mode == 'ble' %}active{% endif %}">Escanear Bluetooth</button>
+            <button type="submit" name="scan" value="all" class="scan-btn {% if scan_mode == 'all' or scan_mode in ['1','true','yes'] %}active{% endif %}">Escanear ambos</button>
+          </div>
+        </div>
+      </form>
+    </header>
 
-<h1>Network Sensor</h1>
-
-<header>
-  <form method="get" action="/ui">
-    <label>
-      Search:
-      <input type="text" name="q" placeholder="MAC / IP / vendor" value="{{ search }}">
-    </label>
-
-    <label>
-      Filter:
-      <select name="filter">
-        <option value="all" {% if filter == 'all' %}selected{% endif %}>All</option>
-        <option value="unknown" {% if filter == 'unknown' %}selected{% endif %}>Unknown</option>
-        <option value="new" {% if filter == 'new' %}selected{% endif %}>New</option>
-        <option value="unapproved" {% if filter == 'unapproved' %}selected{% endif %}>Unapproved</option>
-      </select>
-    </label>
-
-    <button type="submit">Apply</button>
-    <button type="submit" name="scan" value="1">Scan now</button>
-  </form>
-</header>
-
-{% if errors %}
-<div class="errors">
-  <strong>Errors:</strong>
-  <ul>
-    {% for err in errors %}
-    <li>{{ err }}</li>
-    {% endfor %}
-  </ul>
-</div>
-{% endif %}
-
-<h2>LAN Devices</h2>
-<table>
-  <tr>
-    <th>IP</th>
-    <th>MAC</th>
-    <th>Vendor</th>
-    <th>Alias</th>
-    <th>Type</th>
-    <th>Notes</th>
-    <th>First / Last</th>
-    <th>Approved</th>
-    <th>Actions</th>
-  </tr>
-
-  {% for h in lan %}
-  <tr>
-    <form method="post" action="/set/lan">
-      <td>{{ h.ip or "-" }}</td>
-
-      <td>
-        {{ h.identifier }}
-        <input type="hidden" name="identifier" value="{{ h.identifier }}">
-      </td>
-
-      <td>{{ h.vendor or "-" }}</td>
-
-      <td>
-        <input type="text" name="alias" value="{{ h.alias }}">
-      </td>
-
-      <td>
-        <select name="category">
-          <option value="">(none)</option>
-          {% for c in categories %}
-          <option value="{{ c }}" {% if h.category == c %}selected{% endif %}>{{ c }}</option>
-          {% endfor %}
-        </select>
-      </td>
-
-      <td>
-        <textarea name="notes">{{ h.notes }}</textarea>
-      </td>
-
-      <td>
-        {% if h.first_seen %}
-          <div>First: {{ h.first_seen }}</div>
-          <div>Last: {{ h.last_seen }}</div>
-          <div>IP: {{ h.last_ip or "-" }}</div>
+    <section class="scan-panel">
+      <div class="scan-status">
+        {% if scan_label %}
+          Último escaneo: <strong>{{ scan_label }}</strong>
         {% else %}
-          <span>-</span>
+          No se ha ejecutado un escaneo en esta vista
         {% endif %}
-      </td>
+      </div>
+      <div class="scan-status">
+        {% if scan %}
+          Resultados actualizados para {{ scan_label or 'selección' }}
+        {% endif %}
+      </div>
+    </section>
 
-      <td>
-        <input type="hidden" name="approved" value="0">
-        <input type="checkbox" name="approved" value="1" {% if h.approved == 1 %}checked{% endif %}>
-      </td>
+    {% set lan_unknown = lan|rejectattr('known')|list|length %}
+    {% set lan_new = lan|selectattr('new')|list|length %}
+    {% set ble_unknown = ble|rejectattr('known')|list|length %}
+    {% set ble_new = ble|selectattr('new')|list|length %}
+    <section class="stats-grid">
+      <article class="stat-card">
+        <div class="stat-card__label">LAN detectados</div>
+        <p class="stat-card__value">{{ lan|length }}</p>
+        <p class="stat-card__hint">{{ lan_unknown }} desconocidos · {{ lan_new }} nuevos</p>
+      </article>
+      <article class="stat-card">
+        <div class="stat-card__label">Bluetooth detectados</div>
+        <p class="stat-card__value">{{ ble|length }}</p>
+        <p class="stat-card__hint">{{ ble_unknown }} desconocidos · {{ ble_new }} nuevos</p>
+      </article>
+      <article class="stat-card">
+        <div class="stat-card__label">Categorías</div>
+        <p class="stat-card__value">{{ categories|length }}</p>
+        <p class="stat-card__hint">Incluye alias y notas</p>
+      </article>
+    </section>
 
-      <td class="actions">
-        <input type="hidden" name="return_url" value="{{ return_url }}">
-        <button type="submit" name="action" value="save">Save</button>
-        <button type="submit" name="action" value="delete" onclick="return confirm('Delete this device?');">Delete</button>
-      </td>
-    </form>
-  </tr>
-  {% endfor %}
-</table>
-
-<h2>Bluetooth Devices</h2>
-<table>
-  <tr>
-    <th>ADDR</th>
-    <th>Name</th>
-    <th>Alias</th>
-    <th>Type</th>
-    <th>Notes</th>
-    <th>First / Last</th>
-    <th>Approved</th>
-    <th>Actions</th>
-  </tr>
-
-  {% for b in ble %}
-  <tr>
-    <form method="post" action="/set/ble">
-      <td>
-        {{ b.identifier }}
-        <input type="hidden" name="identifier" value="{{ b.identifier }}">
-      </td>
-
-      <td>{{ b.vendor or "-" }}</td>
-
-      <td>
-        <input type="text" name="alias" value="{{ b.alias }}">
-      </td>
-
-      <td>
-        <select name="category">
-          <option value="">(none)</option>
-          {% for c in categories %}
-          <option value="{{ c }}" {% if b.category == c %}selected{% endif %}>{{ c }}</option>
+    {% if errors %}
+      <div class="stat-card" style="border-color: rgba(239,68,68,0.7); background: rgba(254, 242, 242, 0.9); color: #991b1b;">
+        <p class="stat-card__label">Erorres detectados</p>
+        <ul style="margin: 0; padding-left: 18px;">
+          {% for err in errors %}
+            <li>{{ err }}</li>
           {% endfor %}
-        </select>
-      </td>
+        </ul>
+      </div>
+    {% endif %}
 
-      <td>
-        <textarea name="notes">{{ b.notes }}</textarea>
-      </td>
+    <h2>Dispositivos LAN</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>IP</th>
+          <th>MAC</th>
+          <th>Vendor</th>
+          <th>Alias</th>
+          <th>Tipo</th>
+          <th>Notas</th>
+          <th>Historial</th>
+          <th>Aprobado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in lan %}
+          <tr>
+            <form method="post" action="/set/lan">
+              <td>{{ h.ip or '-' }}</td>
+              <td>
+                {{ h.identifier }}
+                <input type="hidden" name="identifier" value="{{ h.identifier }}">
+              </td>
+              <td>{{ h.vendor or '-' }}</td>
+              <td>
+                <input type="text" name="alias" value="{{ h.alias }}">
+                <div class="status-tags">
+                  {% if not h.known %}
+                    <span class="badge unknown">desconocido</span>
+                  {% endif %}
+                  {% if h.new %}
+                    <span class="badge new">nuevo</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td>
+                <select name="category">
+                  <option value="">(ninguno)</option>
+                  {% for c in categories %}
+                    <option value="{{ c }}" {% if h.category == c %}selected{% endif %}>{{ c }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <textarea name="notes">{{ h.notes }}</textarea>
+              </td>
+              <td>
+                {% if h.first_seen %}
+                  <div>Primera: {{ h.first_seen }}</div>
+                  <div>Última: {{ h.last_seen }}</div>
+                  <div>IP: {{ h.last_ip or '-' }}</div>
+                {% else %}
+                  <span>-</span>
+                {% endif %}
+              </td>
+              <td>
+                <input type="hidden" name="approved" value="0">
+                <input type="checkbox" name="approved" value="1" {% if h.approved == 1 %}checked{% endif %}>
+              </td>
+              <td>
+                <div class="table-actions">
+                  <input type="hidden" name="return_url" value="{{ return_url }}">
+                  <button type="submit" name="action" value="save" class="save">Guardar</button>
+                  <button type="submit" name="action" value="delete" class="delete" onclick="return confirm('¿Eliminar este dispositivo?');">Eliminar</button>
+                </div>
+              </td>
+            </form>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
 
-      <td>
-        {% if b.first_seen %}
-          <div>First: {{ b.first_seen }}</div>
-          <div>Last: {{ b.last_seen }}</div>
-        {% else %}
-          <span>-</span>
-        {% endif %}
-      </td>
-
-      <td>
-        <input type="hidden" name="approved" value="0">
-        <input type="checkbox" name="approved" value="1" {% if b.approved == 1 %}checked{% endif %}>
-      </td>
-
-      <td class="actions">
-        <input type="hidden" name="return_url" value="{{ return_url }}">
-        <button type="submit" name="action" value="save">Save</button>
-        <button type="submit" name="action" value="delete" onclick="return confirm('Delete this device?');">Delete</button>
-      </td>
-    </form>
-  </tr>
-  {% endfor %}
-</table>
-
+    <h2>Dispositivos Bluetooth</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>ADDR</th>
+          <th>Nombre</th>
+          <th>Alias</th>
+          <th>Tipo</th>
+          <th>Notas</th>
+          <th>Historial</th>
+          <th>Aprobado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in ble %}
+          <tr>
+            <form method="post" action="/set/ble">
+              <td>
+                {{ b.identifier }}
+                <input type="hidden" name="identifier" value="{{ b.identifier }}">
+              </td>
+              <td>{{ b.vendor or '-' }}</td>
+              <td>
+                <input type="text" name="alias" value="{{ b.alias }}">
+                <div class="status-tags">
+                  {% if not b.known %}
+                    <span class="badge unknown">desconocido</span>
+                  {% endif %}
+                  {% if b.new %}
+                    <span class="badge new">nuevo</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td>
+                <select name="category">
+                  <option value="">(ninguno)</option>
+                  {% for c in categories %}
+                    <option value="{{ c }}" {% if b.category == c %}selected{% endif %}>{{ c }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td>
+                <textarea name="notes">{{ b.notes }}</textarea>
+              </td>
+              <td>
+                {% if b.first_seen %}
+                  <div>Primera: {{ b.first_seen }}</div>
+                  <div>Última: {{ b.last_seen }}</div>
+                {% else %}
+                  <span>-</span>
+                {% endif %}
+              </td>
+              <td>
+                <input type="hidden" name="approved" value="0">
+                <input type="checkbox" name="approved" value="1" {% if b.approved == 1 %}checked{% endif %}>
+              </td>
+              <td>
+                <div class="table-actions">
+                  <input type="hidden" name="return_url" value="{{ return_url }}">
+                  <button type="submit" name="action" value="save" class="save">Guardar</button>
+                  <button type="submit" name="action" value="delete" class="delete" onclick="return confirm('¿Eliminar este dispositivo?');">Eliminar</button>
+                </div>
+              </td>
+            </form>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </main>
 </body>
 </html>

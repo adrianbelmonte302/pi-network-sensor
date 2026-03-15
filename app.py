@@ -231,7 +231,14 @@ def root():
 
 @app.get("/ui", response_class=HTMLResponse)
 def ui(request: Request):
-    scan = request.query_params.get("scan") in ("1", "true", "yes")
+    raw_scan = request.query_params.get("scan")
+    scan_mode = None
+    if raw_scan:
+        lower = raw_scan.lower()
+        scan_mode = "all" if lower in {"1", "true", "yes", "all"} else lower
+    scan = bool(scan_mode)
+    scan_lan = scan and scan_mode in ("all", "lan")
+    scan_ble = scan and scan_mode in ("all", "ble")
     filter_mode = request.query_params.get("filter", "all")
     search = (request.query_params.get("q") or "").strip().lower()
 
@@ -246,15 +253,16 @@ def ui(request: Request):
     ble_scan_results: List[Dict[str, Any]] = []
 
     if scan:
-        try:
-            lan_scan_results = lan_scan()
-        except Exception as e:
-            errors.append(str(e))
-
-        try:
-            ble_scan_results = ble_scan()
-        except Exception as e:
-            errors.append(str(e))
+        if scan_lan:
+            try:
+                lan_scan_results = lan_scan()
+            except Exception as e:
+                errors.append(f"LAN scan: {e}")
+        if scan_ble:
+            try:
+                ble_scan_results = ble_scan()
+            except Exception as e:
+                errors.append(f"Bluetooth scan: {e}")
 
     def build_device_list(kind: str, scanned: List[Dict[str, Any]], known: Dict[str, Any], observed: Dict[str, Any]):
         # Build a single list of devices that includes scanned results,
@@ -356,6 +364,12 @@ def ui(request: Request):
             "search": search,
             "scan": scan,
             "return_url": str(request.url),
+            "scan_mode": scan_mode,
+            "scan_label": {
+                "lan": "LAN",
+                "ble": "Bluetooth",
+                "all": "Ambos",
+            }.get(scan_mode, ""),
         },
     )
 

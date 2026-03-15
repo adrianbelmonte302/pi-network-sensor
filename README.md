@@ -17,6 +17,7 @@ Sensor ligero para Raspberry Pi con interfaz web para inventario de dispositivos
   - Solo no aprobados
 - Búsqueda en pantalla por MAC/IP/vendor/alias
 - Botón para forzar escaneo (LAN + Bluetooth) desde la interfaz web
+- Botones independientes para ejecutar escaneos LAN y Bluetooth con indicadores visuales
 
 ## Instalación en Raspberry Pi
 
@@ -28,3 +29,6 @@ git clone https://github.com/adrianbelmonte302/pi-network-sensor.git /opt/pi-net
 cd /opt/pi-network-sensor
 chmod +x scripts/install.sh scripts/update.sh
 bash scripts/install.sh
+```
+
+El servicio systemd (`systemd/pi-network-sensor.service.txt`) arranca `uvicorn` dentro del entorno virtual y está configurado para ejecutarse como el usuario `adrian`; cámbialo si necesitas otro usuario en tu Raspberry Pi.
