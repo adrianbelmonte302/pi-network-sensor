@@ -1,0 +1,209 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Pi Network Sensor</title>
+
+<style>
+
+body{
+font-family:Arial;
+margin:20px;
+}
+
+table{
+border-collapse:collapse;
+width:100%;
+margin-bottom:40px;
+}
+
+th,td{
+border:1px solid #ddd;
+padding:6px;
+}
+
+th{
+background:#f0f0f0;
+}
+
+select,input,textarea{
+width:100%;
+}
+
+textarea{
+height:40px;
+}
+
+.new{
+color:red;
+font-weight:bold;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h1>Network Sensor</h1>
+
+
+<h2>LAN Devices</h2>
+
+<table>
+
+<tr>
+<th>IP</th>
+<th>MAC</th>
+<th>Vendor</th>
+<th>Alias</th>
+<th>Type</th>
+<th>Approved</th>
+<th>Save</th>
+</tr>
+
+{% for h in lan %}
+
+<tr>
+
+<form method="post" action="/set/lan">
+
+<td>{{h.ip}}</td>
+
+<td>
+{{h.mac}}
+<input type="hidden" name="identifier" value="{{h.mac}}">
+</td>
+
+<td>{{h.vendor}}</td>
+
+<td>
+<input name="alias" value="{{known_lan.get(h.mac,{}).get('alias','')}}">
+</td>
+
+<td>
+
+<select name="category">
+
+<option value=""></option>
+
+{% for c in categories %}
+
+<option value="{{c}}"
+{% if known_lan.get(h.mac,{}).get("category")==c %}
+selected
+{% endif %}
+>
+{{c}}
+</option>
+
+{% endfor %}
+
+</select>
+
+</td>
+
+<td>
+
+<input type="checkbox"
+name="approved"
+value="1"
+{% if known_lan.get(h.mac,{}).get("approved")==1 %}
+checked
+{% endif %}
+>
+
+</td>
+
+<td>
+<button type="submit">save</button>
+</td>
+
+</form>
+
+</tr>
+
+{% endfor %}
+
+</table>
+
+
+
+<h2>Bluetooth Devices</h2>
+
+<table>
+
+<tr>
+<th>ADDR</th>
+<th>Name</th>
+<th>Alias</th>
+<th>Type</th>
+<th>Approved</th>
+<th>Save</th>
+</tr>
+
+{% for b in ble %}
+
+<tr>
+
+<form method="post" action="/set/ble">
+
+<td>
+{{b.addr}}
+<input type="hidden" name="identifier" value="{{b.addr}}">
+</td>
+
+<td>{{b.name}}</td>
+
+<td>
+<input name="alias" value="{{known_ble.get(b.addr,{}).get('alias','')}}">
+</td>
+
+<td>
+
+<select name="category">
+
+<option value=""></option>
+
+{% for c in categories %}
+
+<option value="{{c}}"
+{% if known_ble.get(b.addr,{}).get("category")==c %}
+selected
+{% endif %}
+>
+{{c}}
+</option>
+
+{% endfor %}
+
+</select>
+
+</td>
+
+<td>
+
+<input type="checkbox"
+name="approved"
+value="1"
+{% if known_ble.get(b.addr,{}).get("approved")==1 %}
+checked
+{% endif %}
+>
+
+</td>
+
+<td>
+<button type="submit">save</button>
+</td>
+
+</form>
+
+</tr>
+
+{% endfor %}
+
+</table>
+
+</body>
+</html>
