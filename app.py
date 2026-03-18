@@ -18,7 +18,7 @@ import shutil
 import os
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Callable
 
 app = FastAPI(title="Pi Network Sensor")
 
@@ -54,6 +54,15 @@ EVENT_TYPES = [
 
 
 PORT_SCAN_INTERVAL = timedelta(minutes=30)
+
+LAN_SORT_FIELDS: Dict[str, Callable[[Dict[str, Any]], Any]] = {
+    "ip": lambda d: d.get("ip") or "",
+    "mac": lambda d: d.get("identifier") or "",
+    "vendor": lambda d: (d.get("vendor") or "").lower(),
+    "alias": lambda d: (d.get("alias") or "").lower(),
+    "category": lambda d: (d.get("category") or "").lower(),
+    "last_seen": lambda d: d.get("last_seen_raw") or "",
+}
 
 
 init_db()
@@ -502,6 +511,8 @@ def ui(request: Request):
                     "known": bool(known_entry),
                     "first_seen": format_ts(obs.get("first_seen")),
                     "last_seen": format_ts(obs.get("last_seen")),
+                    "first_seen_raw": obs.get("first_seen"),
+                    "last_seen_raw": obs.get("last_seen"),
                     "last_ip": obs.get("last_ip"),
                     "new": is_new,
                     "notes": known_entry.get("notes", ""),
@@ -533,6 +544,8 @@ def ui(request: Request):
                     "known": bool(known_entry),
                     "first_seen": format_ts(obs.get("first_seen")),
                     "last_seen": format_ts(obs.get("last_seen")),
+                    "first_seen_raw": obs.get("first_seen"),
+                    "last_seen_raw": obs.get("last_seen"),
                     "last_ip": obs.get("last_ip"),
                     "new": is_new,
                     "notes": known_entry.get("notes", ""),
@@ -566,6 +579,8 @@ def ui(request: Request):
                 "known": True,
                 "first_seen": None,
                 "last_seen": None,
+                "first_seen_raw": None,
+                "last_seen_raw": None,
                 "last_ip": None,
                 "new": False,
                 "notes": known_entry.get("notes", ""),
@@ -596,12 +611,25 @@ def ui(request: Request):
 
     lan_devices = build_device_list("lan", lan_scan_results, known_lan, obs_lan, port_scan_cache)
     ble_devices = build_device_list("ble", ble_scan_results, known_ble, obs_ble)
+    lan_sort_by = (request.query_params.get("sort_by") or "").lower()
+    lan_sort_dir = (request.query_params.get("sort_dir") or "asc").lower()
+    if lan_sort_dir not in {"asc", "desc"}:
+        lan_sort_dir = "asc"
+    if lan_sort_by in LAN_SORT_FIELDS:
+        lan_devices.sort(key=LAN_SORT_FIELDS[lan_sort_by], reverse=(lan_sort_dir == "desc"))
 
     recent_events = get_recent_events(event_type=event_type_filter)
     formatted_events = []
     for ev in recent_events:
         ts = format_ts(ev.get("timestamp"))
-        formatted_events.append({**ev, "timestamp_fmt": ts or ev.get("timestamp", "")})
+        target_label = ev.get("identifier") or ev.get("detail") or "-"
+        formatted_events.append(
+            {
+                **ev,
+                "timestamp_fmt": ts or ev.get("timestamp", ""),
+                "target_label": target_label,
+            }
+        )
     wifi_observations_raw = get_wifi_observations()
     wifi_count = len(wifi_observations_raw)
     wifi_observations = [
@@ -635,6 +663,8 @@ def ui(request: Request):
             "event_type_filter": event_type_filter,
             "wifi_observations": wifi_observations,
             "wifi_count": wifi_count,
+            "lan_sort_by": lan_sort_by,
+            "lan_sort_dir": lan_sort_dir,
         },
     )
 

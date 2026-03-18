@@ -189,11 +189,9 @@
       align-items: center;
     }
 
-    .global-actions form {
-      display: inline-flex;
-    }
-
+    .global-actions form,
     .global-actions button {
+      display: inline-flex;
       border-radius: 999px;
       border: 1px solid var(--border);
       padding: 8px 18px;
@@ -204,7 +202,8 @@
       transition: all 0.2s ease;
     }
 
-    .global-actions button.primary {
+    .global-actions button.primary,
+    .global-actions form.primary button {
       background: var(--accent);
       color: white;
       border-color: var(--accent);
@@ -248,6 +247,58 @@
       margin: 4px 0 0;
       font-size: 0.9rem;
       color: #4b5563;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      border-bottom: 2px solid rgba(99, 102, 241, 0.4);
+      margin-bottom: 16px;
+    }
+
+    .tab-button {
+      border: none;
+      background: rgba(255, 255, 255, 0.4);
+      padding: 10px 18px;
+      border-radius: 999px 999px 0 0;
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--muted);
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .tab-button.active {
+      background: var(--surface);
+      color: var(--accent);
+      border-bottom: 2px solid var(--accent);
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .panel-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .table-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
     }
 
     table {
@@ -356,14 +407,6 @@
       font-weight: 600;
     }
 
-    .column-type {
-      width: 170px;
-    }
-
-    .column-type select {
-      min-width: 150px;
-    }
-
     .table-actions .save {
       background: var(--accent);
       color: #fff;
@@ -375,59 +418,34 @@
       color: var(--danger);
     }
 
-    .events-section {
-      margin-bottom: 32px;
+    .events-table th,
+    .events-table td {
+      font-size: 0.85rem;
     }
 
-    .events-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
+    .status-note {
+      margin-bottom: 12px;
+      font-size: 0.85rem;
+      color: #b91c1c;
     }
 
-    .events-list {
-      display: grid;
-      gap: 10px;
-    }
-
-    .events-card {
-      background: var(--surface);
-      border-radius: 12px;
-      border: 1px solid rgba(226, 232, 240, 0.7);
-      padding: 14px 16px;
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
-      align-items: center;
-    }
-
-    .event-type {
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      font-weight: 700;
-      color: #4c1d95;
-    }
-
-    .event-detail {
-      font-size: 0.95rem;
-      color: #1f2040;
-    }
-
-    .event-time {
-      font-size: 0.8rem;
-      color: #6b7280;
-      text-align: right;
+    .error-card {
+      border-color: rgba(239, 68, 68, 0.7);
+      background: rgba(254, 242, 242, 0.9);
+      color: #991b1b;
+      margin-bottom: 24px;
     }
 
     @media (max-width: 768px) {
-    th,
-    td {
-      padding: 12px;
-    }
+      th,
+      td {
+        padding: 12px;
+      }
+
+      .hero {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
     }
   </style>
 </head>
@@ -467,12 +485,12 @@
     </header>
 
     <div class="global-actions">
-      <form method="get" action="/ui">
+      <form method="get" action="/ui" class="primary">
         <input type="hidden" name="scan" value="lan">
         <input type="hidden" name="filter" value="unapproved">
         <input type="hidden" name="q" value="{{ search }}">
         <input type="hidden" name="event_type" value="{{ event_type_filter or '' }}">
-        <button type="submit" class="primary">Scan new/unapproved LAN devices</button>
+        <button type="submit">Scan new/unapproved LAN devices</button>
       </form>
       <form method="get" action="/ui">
         <input type="hidden" name="scan" value="lan">
@@ -543,8 +561,246 @@
       </article>
     </section>
 
-    <section class="events-section">
-      <div class="events-header">
+    <div class="tabs" role="tablist">
+      <button type="button" class="tab-button active" data-tab="lan">LAN detectadas</button>
+      <button type="button" class="tab-button" data-tab="ble">Bluetooth</button>
+      <button type="button" class="tab-button" data-tab="wifi">WiFi</button>
+      <button type="button" class="tab-button" data-tab="events">Eventos recientes</button>
+    </div>
+
+    <div class="tab-panel active" data-tab="lan">
+      <div class="panel-heading">
+        <h2>Dispositivos LAN</h2>
+        <form class="table-controls" method="get" action="/ui">
+          <input type="hidden" name="scan" value="{{ scan_mode or '' }}">
+          <input type="hidden" name="q" value="{{ search }}">
+          <input type="hidden" name="filter" value="{{ filter }}">
+          <input type="hidden" name="event_type" value="{{ event_type_filter or '' }}">
+          <label>
+            Ordenar por
+            <select name="sort_by">
+              <option value="" {% if not lan_sort_by %}selected{% endif %}>Predeterminado</option>
+              <option value="ip" {% if lan_sort_by == 'ip' %}selected{% endif %}>IP</option>
+              <option value="mac" {% if lan_sort_by == 'mac' %}selected{% endif %}>MAC</option>
+              <option value="vendor" {% if lan_sort_by == 'vendor' %}selected{% endif %}>Vendor</option>
+              <option value="alias" {% if lan_sort_by == 'alias' %}selected{% endif %}>Alias</option>
+              <option value="category" {% if lan_sort_by == 'category' %}selected{% endif %}>Tipo</option>
+              <option value="last_seen" {% if lan_sort_by == 'last_seen' %}selected{% endif %}>Última aparición</option>
+            </select>
+          </label>
+          <label>
+            Dirección
+            <select name="sort_dir">
+              <option value="asc" {% if lan_sort_dir == 'asc' %}selected{% endif %}>Ascendente</option>
+              <option value="desc" {% if lan_sort_dir == 'desc' %}selected{% endif %}>Descendente</option>
+            </select>
+          </label>
+          <button type="submit" class="button secondary">Actualizar orden</button>
+        </form>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>IP</th>
+              <th>MAC</th>
+              <th>Vendor</th>
+              <th>Alias</th>
+              <th class="column-type">Tipo</th>
+              <th>Ports</th>
+              <th>Last scan</th>
+              <th>Historial</th>
+              <th>Aprobado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for h in lan %}
+              <tr>
+                <form method="post" action="/set/lan">
+                  <td>{{ h.ip or '-' }}</td>
+                  <td>
+                    {{ h.identifier }}
+                    <input type="hidden" name="identifier" value="{{ h.identifier }}">
+                  </td>
+                  <td>{{ h.vendor or '-' }}</td>
+                  <td>
+                    <input type="text" name="alias" value="{{ h.alias }}">
+                    <div class="status-tags">
+                      {% if not h.known %}
+                        <span class="badge unknown">desconocido</span>
+                      {% endif %}
+                      {% if h.new %}
+                        <span class="badge new">nuevo</span>
+                      {% endif %}
+                    </div>
+                    <textarea name="notes" rows="2" placeholder="Notas">{{ h.notes }}</textarea>
+                  </td>
+                  <td class="column-type">
+                    <select name="category">
+                      <option value="">(ninguno)</option>
+                      {% for c in categories %}
+                        <option value="{{ c }}" {% if h.category == c %}selected{% endif %}>{{ c }}</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td>
+                    {% if h.ports %}
+                      <div class="ports-list">
+                        {% for port in h.ports[:4] %}
+                          <span class="ports-pill" title="{{ h.services | join(', ') }}">{{ port }}</span>
+                        {% endfor %}
+                        {% if h.ports_count > 4 %}
+                          <span class="ports-pill">+{{ h.ports_count - 4 }}</span>
+                        {% endif %}
+                      </div>
+                    {% else %}
+                      <span>-</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if h.last_scan_fmt %}
+                      {{ h.last_scan_fmt }}
+                    {% else %}
+                      <span>-</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if h.first_seen %}
+                      <div>Primera: {{ h.first_seen }}</div>
+                      <div>Última: {{ h.last_seen }}</div>
+                      <div>IP: {{ h.last_ip or '-' }}</div>
+                    {% else %}
+                      <span>-</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <input type="hidden" name="approved" value="0">
+                    <input type="checkbox" name="approved" value="1" {% if h.approved == 1 %}checked{% endif %}>
+                  </td>
+                  <td>
+                    <div class="table-actions">
+                      <input type="hidden" name="return_url" value="{{ return_url }}">
+                      <button type="submit" name="action" value="save" class="save">Guardar</button>
+                      <button type="submit" name="action" value="delete" class="delete" onclick="return confirm('¿Eliminar este dispositivo?');">Eliminar</button>
+                    </div>
+                  </td>
+                </form>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-panel" data-tab="ble">
+      <div class="panel-heading">
+        <h2>Dispositivos Bluetooth</h2>
+        <span class="status-note">Descubrimiento Bluetooth aún no funciona de forma estable en esta Raspberry.</span>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>ADDR</th>
+              <th>Nombre</th>
+              <th>Alias</th>
+              <th class="column-type">Tipo</th>
+              <th>Historial</th>
+              <th>Aprobado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for b in ble %}
+              <tr>
+                <form method="post" action="/set/ble">
+                  <td>
+                    {{ b.identifier }}
+                    <input type="hidden" name="identifier" value="{{ b.identifier }}">
+                  </td>
+                  <td>{{ b.vendor or '-' }}</td>
+                  <td>
+                    <input type="text" name="alias" value="{{ b.alias }}">
+                    <div class="status-tags">
+                      {% if not b.known %}
+                        <span class="badge unknown">desconocido</span>
+                      {% endif %}
+                      {% if b.new %}
+                        <span class="badge new">nuevo</span>
+                      {% endif %}
+                    </div>
+                    <textarea name="notes" rows="2" placeholder="Notas">{{ b.notes }}</textarea>
+                  </td>
+                  <td class="column-type">
+                    <select name="category">
+                      <option value="">(ninguno)</option>
+                      {% for c in categories %}
+                        <option value="{{ c }}" {% if b.category == c %}selected{% endif %}>{{ c }}</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                  <td>
+                    {% if b.first_seen %}
+                      <div>Primera: {{ b.first_seen }}</div>
+                      <div>Última: {{ b.last_seen }}</div>
+                    {% else %}
+                      <span>-</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <input type="hidden" name="approved" value="0">
+                    <input type="checkbox" name="approved" value="1" {% if b.approved == 1 %}checked{% endif %}>
+                  </td>
+                  <td>
+                    <div class="table-actions">
+                      <input type="hidden" name="return_url" value="{{ return_url }}">
+                      <button type="submit" name="action" value="save" class="save">Guardar</button>
+                      <button type="submit" name="action" value="delete" class="delete" onclick="return confirm('¿Eliminar este dispositivo?');">Eliminar</button>
+                    </div>
+                  </td>
+                </form>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-panel" data-tab="wifi">
+      <div class="panel-heading">
+        <h2>WiFi Observations</h2>
+      </div>
+      {% if wifi_observations %}
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>SSID / BSSID</th>
+              <th>Canal</th>
+              <th>Frecuencia</th>
+              <th>Último visto</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for net in wifi_observations %}
+            <tr>
+              <td>{{ net.ssid or 'SSID oculto' }} · {{ net.bssid }}</td>
+              <td>{{ net.channel or '-' }}</td>
+              <td>{{ net.frequency or '-' }}</td>
+              <td>{{ net.last_seen_fmt or '-' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        <p>No hay observaciones WiFi.</p>
+      {% endif %}
+    </div>
+
+    <div class="tab-panel" data-tab="events">
+      <div class="panel-heading">
         <div>
           <p class="eyebrow">Eventos recientes</p>
           <p class="lead">{{ events|length }} eventos</p>
@@ -566,51 +822,36 @@
         </form>
       </div>
       {% if events %}
-      <div class="events-list">
-        {% for ev in events %}
-        <div class="events-card">
-          <div class="event-type">{{ ev.event_type }}</div>
-          <div class="event-detail">
-            {{ ev.detail or '-' }}
-          </div>
-          <div class="event-time">{{ ev.timestamp_fmt or '-' }}</div>
-        </div>
-        {% endfor %}
+      <div class="table-wrapper">
+        <table class="events-table">
+          <thead>
+            <tr>
+              <th>Hora</th>
+              <th>Tipo</th>
+              <th>Dispositivo / IP</th>
+              <th>Detalle</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ev in events %}
+            <tr>
+              <td>{{ ev.timestamp_fmt or '-' }}</td>
+              <td>{{ ev.event_type }}</td>
+              <td>{{ ev.target_label }}</td>
+              <td>{{ ev.detail or '-' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
       {% else %}
-      <p>No hay eventos recientes.</p>
+        <p>No hay eventos recientes.</p>
       {% endif %}
-    </section>
-
-    <section class="events-section">
-      <div class="events-header">
-        <div>
-          <p class="eyebrow">WiFi Observations</p>
-          <p class="lead">{{ wifi_observations|length }} redes</p>
-        </div>
-      </div>
-      {% if wifi_observations %}
-      <div class="events-list">
-        {% for net in wifi_observations %}
-        <div class="events-card">
-          <div class="event-type">{{ net.ssid or 'SSID oculto' }}</div>
-          <div class="event-detail">
-            BSSID {{ net.bssid }} · Canal {{ net.channel or '-' }}
-          </div>
-          <div class="event-time">
-            {{ net.last_seen_fmt or '-' }} · {{ net.frequency or '-' }}
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-      {% else %}
-      <p>No hay observaciones WiFi.</p>
-      {% endif %}
-    </section>
+    </div>
 
     {% if errors %}
-      <div class="stat-card" style="border-color: rgba(239,68,68,0.7); background: rgba(254, 242, 242, 0.9); color: #991b1b;">
-        <p class="stat-card__label">Erorres detectados</p>
+      <div class="stat-card error-card">
+        <p class="stat-card__label">Errores detectados</p>
         <ul style="margin: 0; padding-left: 18px;">
           {% for err in errors %}
             <li>{{ err }}</li>
@@ -618,166 +859,30 @@
         </ul>
       </div>
     {% endif %}
-
-    <h2>Dispositivos LAN</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>IP</th>
-          <th>MAC</th>
-          <th>Vendor</th>
-          <th>Alias</th>
-          <th class="column-type">Tipo</th>
-          <th>Ports</th>
-          <th>Last scan</th>
-          <th>Historial</th>
-          <th>Aprobado</th>
-          <th>Acciones</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for h in lan %}
-          <tr>
-            <form method="post" action="/set/lan">
-              <td>{{ h.ip or '-' }}</td>
-              <td>
-                {{ h.identifier }}
-                <input type="hidden" name="identifier" value="{{ h.identifier }}">
-              </td>
-              <td>{{ h.vendor or '-' }}</td>
-              <td>
-                <input type="text" name="alias" value="{{ h.alias }}">
-                <div class="status-tags">
-                  {% if not h.known %}
-                    <span class="badge unknown">desconocido</span>
-                  {% endif %}
-                  {% if h.new %}
-                    <span class="badge new">nuevo</span>
-                  {% endif %}
-                </div>
-                <textarea name="notes" rows="2" placeholder="Notas">{{ h.notes }}</textarea>
-              </td>
-              <td class="column-type">
-                <select name="category">
-                  <option value="">(ninguno)</option>
-                  {% for c in categories %}
-                    <option value="{{ c }}" {% if h.category == c %}selected{% endif %}>{{ c }}</option>
-                  {% endfor %}
-                </select>
-              </td>
-              <td>
-                {% if h.ports %}
-                  <div class="ports-list">
-                    {% for port in h.ports[:4] %}
-                      <span class="ports-pill" title="{{ h.services | join(', ') }}">{{ port }}</span>
-                    {% endfor %}
-                    {% if h.ports_count > 4 %}
-                      <span class="ports-pill">+{{ h.ports_count - 4 }}</span>
-                    {% endif %}
-                  </div>
-                {% else %}
-                  <span>-</span>
-                {% endif %}
-              </td>
-              <td>
-                {% if h.last_scan_fmt %}
-                  {{ h.last_scan_fmt }}
-                {% else %}
-                  <span>-</span>
-                {% endif %}
-              </td>
-              <td>
-                {% if h.first_seen %}
-                  <div>Primera: {{ h.first_seen }}</div>
-                  <div>Última: {{ h.last_seen }}</div>
-                  <div>IP: {{ h.last_ip or '-' }}</div>
-                {% else %}
-                  <span>-</span>
-                {% endif %}
-              </td>
-              <td>
-                <input type="hidden" name="approved" value="0">
-                <input type="checkbox" name="approved" value="1" {% if h.approved == 1 %}checked{% endif %}>
-              </td>
-              <td>
-                <div class="table-actions">
-                  <input type="hidden" name="return_url" value="{{ return_url }}">
-                  <button type="submit" name="action" value="save" class="save">Guardar</button>
-                  <button type="submit" name="action" value="delete" class="delete" onclick="return confirm('¿Eliminar este dispositivo?');">Eliminar</button>
-                </div>
-              </td>
-            </form>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-
-    <h2>Dispositivos Bluetooth</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>ADDR</th>
-          <th>Nombre</th>
-          <th>Alias</th>
-          <th class="column-type">Tipo</th>
-          <th>Historial</th>
-          <th>Aprobado</th>
-          <th>Acciones</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for b in ble %}
-          <tr>
-            <form method="post" action="/set/ble">
-              <td>
-                {{ b.identifier }}
-                <input type="hidden" name="identifier" value="{{ b.identifier }}">
-              </td>
-              <td>{{ b.vendor or '-' }}</td>
-              <td>
-                <input type="text" name="alias" value="{{ b.alias }}">
-                <div class="status-tags">
-                  {% if not b.known %}
-                    <span class="badge unknown">desconocido</span>
-                  {% endif %}
-                  {% if b.new %}
-                    <span class="badge new">nuevo</span>
-                  {% endif %}
-                </div>
-                <textarea name="notes" rows="2" placeholder="Notas">{{ b.notes }}</textarea>
-              </td>
-              <td class="column-type">
-                <select name="category">
-                  <option value="">(ninguno)</option>
-                  {% for c in categories %}
-                    <option value="{{ c }}" {% if b.category == c %}selected{% endif %}>{{ c }}</option>
-                  {% endfor %}
-                </select>
-              </td>
-              <td>
-                {% if b.first_seen %}
-                  <div>Primera: {{ b.first_seen }}</div>
-                  <div>Última: {{ b.last_seen }}</div>
-                {% else %}
-                  <span>-</span>
-                {% endif %}
-              </td>
-              <td>
-                <input type="hidden" name="approved" value="0">
-                <input type="checkbox" name="approved" value="1" {% if b.approved == 1 %}checked{% endif %}>
-              </td>
-              <td>
-                <div class="table-actions">
-                  <input type="hidden" name="return_url" value="{{ return_url }}">
-                  <button type="submit" name="action" value="save" class="save">Guardar</button>
-                  <button type="submit" name="action" value="delete" class="delete" onclick="return confirm('¿Eliminar este dispositivo?');">Eliminar</button>
-                </div>
-              </td>
-            </form>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
   </main>
+
+  <script>
+    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabPanels = document.querySelectorAll('.tab-panel');
+
+    function showTab(tabName) {
+      tabPanels.forEach(panel => {
+        panel.classList.toggle('active', panel.dataset.tab === tabName);
+      });
+      tabButtons.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tabName);
+      });
+      localStorage.setItem('pi_sensor_tab', tabName);
+    }
+
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => showTab(btn.dataset.tab));
+    });
+
+    const storedTab = localStorage.getItem('pi_sensor_tab');
+    if (storedTab) {
+      showTab(storedTab);
+    }
+  </script>
 </body>
 </html>
