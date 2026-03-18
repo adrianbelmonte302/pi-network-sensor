@@ -23,7 +23,6 @@ from collections import Counter, deque
 from threading import Event, Lock, Thread
 
 app = FastAPI(title="Pi Network Sensor")
-app.state.scan_interval = SCAN_INTERVAL_SECONDS
 
 BASE_DIR = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -35,7 +34,17 @@ BASH = shutil.which("bash") or "/usr/bin/bash"
 TIMEOUT = shutil.which("timeout") or "/usr/bin/timeout"
 IW_CMD = shutil.which("iw") or "/usr/sbin/iw"
 IWLIST_CMD = shutil.which("iwlist") or "/sbin/iwlist"
-BLE_SCAN_DURATION = int(os.environ.get("BLE_SCAN_DURATION") or "8")
+
+def _int_env(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+BLE_SCAN_DURATION = _int_env("BLE_SCAN_DURATION", 8)
 
 NEW_WINDOW_SECONDS = 300
 
@@ -63,7 +72,8 @@ EVENT_TYPES = [
 
 PORT_SCAN_INTERVAL = timedelta(minutes=30)
 
-SCAN_INTERVAL_SECONDS = int(os.environ.get("SCAN_INTERVAL_SECONDS") or "300")
+SCAN_INTERVAL_SECONDS = _int_env("SCAN_INTERVAL_SECONDS", 300)
+app.state.scan_interval = SCAN_INTERVAL_SECONDS
 
 SENSITIVE_PORTS = {22, 23, 80, 443, 445, 554, 3389, 5900, 8080, 8443}
 
