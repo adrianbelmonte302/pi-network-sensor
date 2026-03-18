@@ -32,6 +32,7 @@ BASH = shutil.which("bash") or "/usr/bin/bash"
 TIMEOUT = shutil.which("timeout") or "/usr/bin/timeout"
 IW_CMD = shutil.which("iw") or "/usr/sbin/iw"
 IWLIST_CMD = shutil.which("iwlist") or "/sbin/iwlist"
+BLE_SCAN_DURATION = int(os.environ.get("BLE_SCAN_DURATION") or "8")
 
 NEW_WINDOW_SECONDS = 300
 
@@ -50,6 +51,9 @@ EVENT_TYPES = [
     "port_scan_failed",
     "wifi_bssid_new",
     "wifi_ssid_changed",
+    "system_login_failure",
+    "system_scan_detected",
+    "system_attack_detected",
 ]
 
 
@@ -62,6 +66,40 @@ LAN_SORT_FIELDS: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "alias": lambda d: (d.get("alias") or "").lower(),
     "category": lambda d: (d.get("category") or "").lower(),
     "last_seen": lambda d: d.get("last_seen_raw") or "",
+}
+
+
+SYSTEM_LOG_PATHS = [
+    Path("/var/log/auth.log"),
+    Path("/var/log/syslog"),
+    Path("/var/log/messages"),
+]
+
+SYSTEM_LOG_KEYWORDS = {
+    "system_login_failure": [
+        "failed password",
+        "authentication failure",
+        "invalid user",
+        "pam:authentication failure",
+        "login incorrect",
+        "maximum authentication attempts",
+    ],
+    "system_scan_detected": [
+        "nmap",
+        "masscan",
+        "zmap",
+        "port scan",
+        "scan detected",
+        "scanning",
+    ],
+    "system_attack_detected": [
+        "attack",
+        "dos",
+        "bruteforce",
+        "invalid packet",
+        "malformed",
+        "denied",
+    ],
 }
 
 
@@ -80,6 +118,69 @@ def format_ts(ts: Optional[str]) -> Optional[str]:
         return d.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     except Exception:
         return ts
+
+
+def _tail_lines(path: Path, limit: int = 200) -> List[str]:
+    lines = deque(maxlen=limit)
+    try:
+        with path.open('r', encoding='utf-8', errors='ignore') as fh:
+            for line in fh:
+                lines.append(line.rstrip())
+    except FileNotFoundError:
+        return []
+    return list(lines)
+
+
+def _parse_log_timestamp(line: str) -> Optional[str]:
+    match = re.match(r"^([A-Za-z]{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})", line)
+    if not match:
+        return None
+    ts_str = match.group(1)
+    try:
+        parsed = datetime.strptime(f"{now().year} {ts_str}", "%Y %b %d %H:%M:%S")
+        parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.isoformat()
+    except ValueError:
+        return None
+
+
+def _match_system_event(line: str) -> Optional[str]:
+    normalized = line.lower()
+    for event_type, keywords in SYSTEM_LOG_KEYWORDS.items():
+        if any(keyword in normalized for keyword in keywords):
+            return event_type
+    return None
+
+
+def get_system_events(limit: int = 25, event_type_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+    events: List[Dict[str, Any]] = []
+    for path in SYSTEM_LOG_PATHS:
+        if len(events) >= limit:
+            break
+        if not path.exists():
+            continue
+        lines_tail = _tail_lines(path, limit=200)
+        for line in reversed(lines_tail):
+            detected = _match_system_event(line)
+            if not detected:
+                continue
+            if event_type_filter and detected != event_type_filter:
+                continue
+            timestamp = _parse_log_timestamp(line) or now().isoformat()
+            ip_match = re.search(r"(\d{1,3}(?:\.\d{1,3}){3})", line)
+            events.append(
+                {
+                    "timestamp": timestamp,
+                    "event_type": detected,
+                    "kind": "system",
+                    "identifier": path.name,
+                    "detail": line,
+                    "ip": ip_match.group(1) if ip_match else None,
+                }
+            )
+            if len(events) >= limit:
+                break
+    return events
 
 
 def run(cmd, timeout: int = 60) -> str:
@@ -266,10 +367,22 @@ def ble_scan() -> List[Dict[str, Any]]:
 
 
 def ble_nearby() -> Dict[str, Any]:
-    cmd = f"{TIMEOUT} 10s {BLUETOOTHCTL} scan on"
     ensure_bluetooth_adapter()
+    script = "\n".join(
+        [
+            f"{BLUETOOTHCTL} <<'EOF'",
+            "power on",
+            "scan on",
+            f"sleep {BLE_SCAN_DURATION}",
+            "devices",
+            "scan off",
+            "exit",
+            "EOF",
+        ]
+    )
+    timeout = BLE_SCAN_DURATION + 18
     try:
-        out = run([BASH, "-c", cmd], timeout=25)
+        out = run([BASH, "-c", script], timeout=timeout)
     except RuntimeError as exc:
         message = str(exc)
         if "NotReady" in message or "SetDiscoveryFilter failed" in message:
@@ -279,18 +392,14 @@ def ble_nearby() -> Dict[str, Any]:
         raise
 
     devices: Dict[str, str] = {}
-
     for line in out.splitlines():
-        m = re.search(r"Device\s+([0-9A-F:]{17})\s+(.+)$", line)
+        m = re.search(r"Device\s+([0-9A-F:]{17})\s+(.+)", line)
         if not m:
             continue
-
         addr = m.group(1).lower()
         name = m.group(2).strip()
-
         if name.startswith("RSSI"):
             continue
-
         devices[addr] = name
 
     out_list = [{"addr": a, "name": n} for a, n in devices.items()]
@@ -619,10 +728,38 @@ def ui(request: Request):
         lan_devices.sort(key=LAN_SORT_FIELDS[lan_sort_by], reverse=(lan_sort_dir == "desc"))
 
     recent_events = get_recent_events(event_type=event_type_filter)
+    system_events = get_system_events(event_type_filter=event_type_filter)
+    combined_events = recent_events + system_events
+    combined_events.sort(key=lambda ev: ev.get("timestamp") or "", reverse=True)
+    combined_events = combined_events[:30]
+
+    wifi_observations_raw = get_wifi_observations()
+    observations_map = {
+        "lan": obs_lan,
+        "ble": obs_ble,
+        "wifi": {obs["bssid"]: obs for obs in wifi_observations_raw},
+    }
     formatted_events = []
-    for ev in recent_events:
+    for ev in combined_events:
         ts = format_ts(ev.get("timestamp"))
-        target_label = ev.get("identifier") or ev.get("detail") or "-"
+        kind = ev.get("kind")
+        identifier = ev.get("identifier")
+        obs = observations_map.get(kind, {}).get(identifier) if identifier else None
+        obs_name = None
+        if obs:
+            obs_name = obs.get("vendor") or obs.get("display_name") or obs.get("ssid") or obs.get("alias")
+        obs_ip = obs.get("last_ip") if obs else None
+        target_parts: List[str] = []
+        if identifier:
+            target_parts.append(identifier)
+        if obs_name and obs_name not in target_parts:
+            target_parts.append(obs_name)
+        if obs_ip and obs_ip not in target_parts:
+            target_parts.append(obs_ip)
+        event_ip = ev.get("ip")
+        if event_ip and event_ip not in target_parts:
+            target_parts.append(event_ip)
+        target_label = " · ".join(target_parts) if target_parts else "-"
         formatted_events.append(
             {
                 **ev,
@@ -630,7 +767,6 @@ def ui(request: Request):
                 "target_label": target_label,
             }
         )
-    wifi_observations_raw = get_wifi_observations()
     wifi_count = len(wifi_observations_raw)
     wifi_observations = [
         {**obs, "last_seen_fmt": format_ts(obs.get("last_seen"))}

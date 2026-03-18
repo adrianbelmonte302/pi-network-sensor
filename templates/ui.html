@@ -418,6 +418,29 @@
       color: var(--danger);
     }
 
+    .table-sort-link {
+      color: inherit;
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    .table-sort-link:hover {
+      color: var(--accent);
+    }
+
+    .table-sort-link .sort-indicator {
+      font-size: 0.75rem;
+    }
+
+    .column-type {
+      min-width: 220px;
+      white-space: nowrap;
+    }
+
+    .column-type select {
+      min-width: 150px;
+    }
+
     .events-table th,
     .events-table td {
       font-size: 0.85rem;
@@ -450,6 +473,14 @@
   </style>
 </head>
 <body>
+  {% macro lan_sort_link(field, label) %}
+    {% set direction = 'asc' %}
+    {% if lan_sort_by == field %}
+      {% set direction = 'desc' if lan_sort_dir == 'asc' else 'asc' %}
+    {% endif %}
+    {% set url = request.url.include_query_params(sort_by=field, sort_dir=direction) %}
+    <a class="table-sort-link" href="{{ url }}">{{ label }}{% if lan_sort_by == field %} <span class="sort-indicator">{{ '↑' if lan_sort_dir == 'asc' else '↓' }}</span>{% endif %}</a>
+  {% endmacro %}
   <main>
     <header class="hero">
       <div>
@@ -599,14 +630,14 @@
         </form>
       </div>
       <div class="table-wrapper">
-        <table>
+      <table>
           <thead>
             <tr>
-              <th>IP</th>
-              <th>MAC</th>
-              <th>Vendor</th>
-              <th>Alias</th>
-              <th class="column-type">Tipo</th>
+              <th>{{ lan_sort_link('ip','IP') }}</th>
+              <th>{{ lan_sort_link('mac','MAC') }}</th>
+              <th>{{ lan_sort_link('vendor','Vendor') }}</th>
+              <th>{{ lan_sort_link('alias','Alias') }}</th>
+              <th class="column-type">{{ lan_sort_link('category','Tipo') }}</th>
               <th>Ports</th>
               <th>Last scan</th>
               <th>Historial</th>
@@ -821,6 +852,7 @@
           <button type="submit" class="button secondary">Aplicar filtro</button>
         </form>
       </div>
+      <p class="status-note">También se muestran aquí logs del sistema (exploraciones, ataques o intentos de login fallidos).</p>
       {% if events %}
       <div class="table-wrapper">
         <table class="events-table">
