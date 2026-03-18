@@ -299,6 +299,7 @@
 
     .table-wrapper {
       overflow-x: auto;
+      max-width: 100%;
     }
 
     table {
@@ -320,7 +321,7 @@
 
     th,
     td {
-      padding: 16px 20px;
+      padding: 10px 14px;
       border-bottom: 1px solid rgba(15, 23, 42, 0.06);
     }
 
@@ -416,6 +417,90 @@
       background: transparent;
       border: 1px solid rgba(239, 68, 68, 0.5);
       color: var(--danger);
+    }
+
+    .risk-badge {
+      border-radius: 999px;
+      padding: 2px 10px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .risk-high {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+
+    .risk-medium {
+      background: #ffedd5;
+      color: #b45309;
+      border: 1px solid #fcd34d;
+    }
+
+    .risk-low {
+      background: #ecfdf5;
+      color: #047857;
+      border: 1px solid #6ee7b7;
+    }
+
+    .approved-section,
+    .network-summary,
+    .detail-panel {
+      margin-bottom: 24px;
+      background: var(--surface);
+      border-radius: 14px;
+      padding: 18px;
+      border: 1px solid rgba(226, 232, 240, 0.7);
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+    }
+
+    .approved-section table {
+      font-size: 0.85rem;
+      margin-top: 12px;
+    }
+
+    .approved-section thead th,
+    .approved-section tbody td {
+      padding: 8px 10px;
+    }
+
+    .network-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+
+    .network-card {
+      background: var(--bg);
+      border-radius: 12px;
+      padding: 14px;
+      border: 1px dashed rgba(79, 70, 229, 0.3);
+    }
+
+    .detail-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .detail-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: flex-end;
+    }
+
+    .detail-form label {
+      margin: 0;
+    }
+
+    .detail-card {
+      background: #fefce8;
+      border-radius: 12px;
+      padding: 14px;
+      border: 1px solid #fcd34d;
     }
 
     .table-sort-link {
@@ -592,10 +677,74 @@
       </article>
     </section>
 
+    <section class="approved-section">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Dispositivos aprobados</p>
+          <p class="lead">{{ approved_devices|length }} guardados</p>
+        </div>
+      </div>
+      {% if approved_devices %}
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Alias / MAC</th>
+              <th>IP</th>
+              <th>Tipo</th>
+              <th>Riesgo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for device in approved_devices %}
+            <tr>
+              <td>
+                <strong>{{ device.alias or device.identifier }}</strong>
+                <br>{{ device.identifier }}
+              </td>
+              <td>{{ device.ip or device.last_ip or '-' }}</td>
+              <td>{{ device.category or '—' }}</td>
+              <td>
+                <span class="risk-badge risk-{{ device.risk_level }}">
+                  {{ device.risk_label }}
+                </span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        <p>No hay dispositivos aprobados todavía.</p>
+      {% endif %}
+    </section>
+
+    <section class="network-summary">
+      <div class="network-card">
+        <p class="eyebrow">Resumen LAN</p>
+        <p class="lead">{{ lan_summary.count or 0 }} dispositivos</p>
+        <p><strong>Rango IP:</strong> {{ lan_summary.ip_range or '-' }}</p>
+        <p><strong>Red estimada:</strong> {{ lan_summary.network_hint or 'Desconocida' }}</p>
+        <p><strong>Vendors:</strong> {{ lan_summary.vendor_sample or '—' }} ({{ lan_summary.vendor_count or 0 }})</p>
+        <p><small>Último escaneo automático: {{ last_scan_time or '—' }}</small></p>
+      </div>
+      <div class="network-card">
+        <p class="eyebrow">WiFi canales</p>
+        <p class="lead">{{ wifi_summary.count or 0 }} puntos de acceso</p>
+        <p>
+          {% for channel in wifi_summary.top_channels %}
+            {{ channel }}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+        </p>
+        <p><small>Escaneos periódicos cada {{ (request.app.state.scan_interval if request.app.state.scan_interval else 300) }} seg.</small></p>
+      </div>
+    </section>
+
     <div class="tabs" role="tablist">
       <button type="button" class="tab-button active" data-tab="lan">LAN detectadas</button>
       <button type="button" class="tab-button" data-tab="ble">Bluetooth</button>
       <button type="button" class="tab-button" data-tab="wifi">WiFi</button>
+      <button type="button" class="tab-button" data-tab="detail">Detalle LAN</button>
       <button type="button" class="tab-button" data-tab="events">Eventos recientes</button>
     </div>
 
@@ -830,6 +979,45 @@
       {% endif %}
     </div>
 
+    <div class="tab-panel" data-tab="detail">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Escaneo detallado</p>
+          <p class="lead">Ejecuta un nmap/manual para cada LAN detectada</p>
+        </div>
+      </div>
+      <div class="detail-panel">
+        <form class="detail-form" method="post" action="/lan/scan">
+          <label>
+            Dispositivo
+            <select name="identifier">
+              {% for device in lan %}
+                <option value="{{ device.identifier }}" {% if detail_id == device.identifier %}selected{% endif %}>
+                  {{ device.alias or device.identifier }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+          <input type="hidden" name="return_url" value="{{ request.url }}">
+          <button type="submit" class="button primary">Lanzar escaneo nmap</button>
+        </form>
+        {% if detail_scan %}
+        <div class="detail-card">
+          <p><strong>{{ detail_scan.identifier }}</strong> · {{ detail_scan.ip or 'Sin IP registrada' }}</p>
+          <p>Última ejecución: {{ detail_scan.timestamp }}</p>
+          {% if detail_scan.error %}
+            <p class="risk-badge risk-medium">{{ detail_scan.error }}</p>
+          {% else %}
+            <p>Puertos descubiertos: {{ detail_scan.ports | join(', ') if detail_scan.ports else 'Ninguno' }}</p>
+            <p>Servicios: {{ detail_scan.services | join(', ') if detail_scan.services else 'Sin servicios identificados' }}</p>
+          {% endif %}
+        </div>
+        {% else %}
+          <p>Selecciona un dispositivo y lanza un escaneo extendido para tener información adicional.</p>
+        {% endif %}
+      </div>
+    </div>
+
     <div class="tab-panel" data-tab="events">
       <div class="panel-heading">
         <div>
@@ -862,6 +1050,7 @@
               <th>Tipo</th>
               <th>Dispositivo / IP</th>
               <th>Detalle</th>
+              <th>Riesgo</th>
             </tr>
           </thead>
           <tbody>
@@ -871,6 +1060,11 @@
               <td>{{ ev.event_type }}</td>
               <td>{{ ev.target_label }}</td>
               <td>{{ ev.detail or '-' }}</td>
+              <td>
+                <span class="risk-badge risk-{{ ev.risk_level }}">
+                  {{ ev.risk_label }}
+                </span>
+              </td>
             </tr>
             {% endfor %}
           </tbody>

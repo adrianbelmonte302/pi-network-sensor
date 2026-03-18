@@ -19,8 +19,11 @@ import os
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List, Callable
+from collections import Counter, deque
+from threading import Event, Lock, Thread
 
 app = FastAPI(title="Pi Network Sensor")
+app.state.scan_interval = SCAN_INTERVAL_SECONDS
 
 BASE_DIR = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -38,7 +41,8 @@ NEW_WINDOW_SECONDS = 300
 
 BASE_CATEGORIES = [
     "pc","laptop","nas","server","iot","mobile","tablet",
-    "tv","watch","camera","printer","router","switch","ap","unknown"
+    "tv","watch","camera","printer","router","switch","ap","console",
+    "repeater","bridge","gateway","speaker","unknown"
 ]
 
 
@@ -58,6 +62,37 @@ EVENT_TYPES = [
 
 
 PORT_SCAN_INTERVAL = timedelta(minutes=30)
+
+SCAN_INTERVAL_SECONDS = int(os.environ.get("SCAN_INTERVAL_SECONDS") or "300")
+
+SENSITIVE_PORTS = {22, 23, 80, 443, 445, 554, 3389, 5900, 8080, 8443}
+
+EVENT_RISK_LEVELS = {
+    "system_attack_detected": "high",
+    "system_scan_detected": "medium",
+    "system_login_failure": "medium",
+    "new_open_ports": "medium",
+    "port_scan_failed": "medium",
+    "ble_name_changed": "low",
+    "wifi_bssid_new": "low",
+    "wifi_ssid_changed": "low",
+    "new_device": "medium",
+    "ip_changed": "medium",
+    "vendor_changed": "low",
+}
+
+EVENT_RISK_COLORS = {
+    "high": "#b91c1c",
+    "medium": "#d97706",
+    "low": "#047857",
+}
+
+EVENT_RISK_LABELS = {
+    "high": "Alto",
+    "medium": "Medio",
+    "low": "Bajo",
+}
+
 
 LAN_SORT_FIELDS: Dict[str, Callable[[Dict[str, Any]], Any]] = {
     "ip": lambda d: d.get("ip") or "",
@@ -103,6 +138,20 @@ SYSTEM_LOG_KEYWORDS = {
 }
 
 
+scan_cache_lock = Lock()
+scan_cache: Dict[str, Any] = {
+    "lan": [],
+    "ble": [],
+    "wifi": [],
+    "timestamp": None,
+    "lan_summary": {},
+    "wifi_summary": {},
+}
+scan_stop_event = Event()
+detailed_scan_cache: Dict[str, Dict[str, Any]] = {}
+detail_cache_lock = Lock()
+
+
 init_db()
 
 
@@ -129,6 +178,121 @@ def _tail_lines(path: Path, limit: int = 200) -> List[str]:
     except FileNotFoundError:
         return []
     return list(lines)
+
+
+def _lan_summary(devices: List[Dict[str, Any]]) -> Dict[str, Any]:
+    ips = sorted({d.get("ip") for d in devices if d.get("ip")})
+    if ips:
+        ip_range = f"{ips[0]} - {ips[-1]}" if len(ips) > 1 else ips[0]
+        parts = ips[0].split(".")
+        network_hint = ".".join(parts[:3]) + ".0/24" if len(parts) == 4 else None
+    else:
+        ip_range = "-"
+        network_hint = None
+    vendors = sorted({d.get("vendor") for d in devices if d.get("vendor")})
+    vendor_sample = ", ".join(vendors[:3]) if vendors else "-"
+    return {
+        "count": len(devices),
+        "ip_range": ip_range,
+        "network_hint": network_hint,
+        "vendor_count": len(vendors),
+        "vendor_sample": vendor_sample,
+    }
+
+
+def _wifi_summary(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    channels = Counter((entry.get("channel") or "desconocido") for entry in entries)
+    channel_list = [
+        f"{ch} ({count})" for ch, count in channels.most_common(3) if ch and count
+    ]
+    return {
+        "count": len(entries),
+        "top_channels": channel_list or ["Sin datos"],
+    }
+
+
+def assess_device_risk(device: Dict[str, Any]) -> Dict[str, Any]:
+    score = 0
+    reasons: List[str] = []
+    if device.get("new"):
+        score += 2
+        reasons.append("Dispositivo nuevo")
+    if not device.get("known"):
+        score += 1
+        reasons.append("Dispositivo desconocido")
+    if device.get("approved") == 0:
+        score += 2
+        reasons.append("No aprobado")
+    if not device.get("category"):
+        score += 1
+        reasons.append("Sin tipo asignado")
+    ports = device.get("ports") or []
+    sensitive = [p for p in ports if p in SENSITIVE_PORTS]
+    if sensitive:
+        score += len(sensitive)
+        reasons.append(
+            f"Puertos sensibles abiertos: {', '.join(str(p) for p in sensitive[:3])}"
+        )
+    level = "low"
+    if score >= 6:
+        level = "high"
+    elif score >= 3:
+        level = "medium"
+    return {
+        "risk_score": score,
+        "risk_level": level,
+        "risk_reason": "; ".join(reasons) if reasons else "Sin alertas",
+        "risk_label": EVENT_RISK_LABELS.get(level, level.title()),
+        "risk_color": EVENT_RISK_COLORS.get(level, EVENT_RISK_COLORS["low"]),
+    }
+
+
+def get_event_risk_level(event_type: Optional[str]) -> str:
+    return EVENT_RISK_LEVELS.get(event_type, "low")
+
+
+def _update_scan_cache(lan: List[Dict[str, Any]], ble: List[Dict[str, Any]], wifi: List[Dict[str, Any]]) -> None:
+    with scan_cache_lock:
+        scan_cache["lan"] = lan
+        scan_cache["ble"] = ble
+        scan_cache["wifi"] = wifi
+        scan_cache["timestamp"] = now().isoformat()
+        scan_cache["lan_summary"] = _lan_summary(lan)
+        scan_cache["wifi_summary"] = _wifi_summary(wifi)
+
+
+def _perform_scan_cycle() -> None:
+    lan, ble, wifi = [], [], []
+    try:
+        lan = lan_scan()
+    except Exception:
+        pass
+    try:
+        ble = ble_scan()
+    except Exception:
+        pass
+    try:
+        wifi = wifi_scan()
+    except Exception:
+        pass
+    _update_scan_cache(lan, ble, wifi)
+
+
+def _periodic_scanner() -> None:
+    _perform_scan_cycle()
+    while not scan_stop_event.wait(SCAN_INTERVAL_SECONDS):
+        _perform_scan_cycle()
+
+
+@app.on_event("startup")
+def start_periodic_scans():
+    thread = Thread(target=_periodic_scanner, daemon=True)
+    thread.start()
+
+
+@app.on_event("shutdown")
+def stop_periodic_scans():
+    scan_stop_event.set()
 
 
 def _parse_log_timestamp(line: str) -> Optional[str]:
@@ -533,6 +697,15 @@ def ui(request: Request):
     event_type_filter = request.query_params.get("event_type")
 
     errors: List[str] = []
+    with scan_cache_lock:
+        cached_scan = {
+            "lan": list(scan_cache["lan"]),
+            "ble": list(scan_cache["ble"]),
+            "wifi": list(scan_cache["wifi"]),
+            "timestamp": scan_cache.get("timestamp"),
+            "lan_summary": dict(scan_cache.get("lan_summary") or {}),
+            "wifi_summary": dict(scan_cache.get("wifi_summary") or {}),
+        }
 
     lan_scan_results: List[Dict[str, Any]] = []
     ble_scan_results: List[Dict[str, Any]] = []
@@ -609,7 +782,7 @@ def ui(request: Request):
                 last_scan_ts = port_info.get("last_scan") if port_info else None
                 last_scan_fmt = format_ts(last_scan_ts) if last_scan_ts else None
                 obs_vendor = obs.get("vendor") or obs.get("display_name")
-                devices_by_id[identifier] = {
+                device_entry = {
                     "kind": kind,
                     "identifier": identifier,
                     "ip": d.get("ip"),
@@ -632,6 +805,8 @@ def ui(request: Request):
                     "ports_summary": ", ".join(str(p) for p in ports_list[:6]),
                     "ports_count": len(ports_list),
                 }
+                device_entry.update(assess_device_risk(device_entry))
+                devices_by_id[identifier] = device_entry
         else:
             for identifier, obs in observed.items():
                 port_info = cache.get(identifier) or get_port_scan(kind, identifier)
@@ -642,7 +817,7 @@ def ui(request: Request):
                 last_scan_ts = port_info.get("last_scan") if port_info else None
                 last_scan_fmt = format_ts(last_scan_ts) if last_scan_ts else None
                 obs_vendor = obs.get("vendor") or obs.get("display_name")
-                devices_by_id[identifier] = {
+                device_entry = {
                     "kind": kind,
                     "identifier": identifier,
                     "ip": obs.get("last_ip"),
@@ -665,6 +840,8 @@ def ui(request: Request):
                     "ports_summary": ", ".join(str(p) for p in ports_list[:6]),
                     "ports_count": len(ports_list),
                 }
+                device_entry.update(assess_device_risk(device_entry))
+                devices_by_id[identifier] = device_entry
 
         # Include known devices even if they aren't currently observed.
         for identifier, known_entry in known.items():
@@ -677,7 +854,7 @@ def ui(request: Request):
             services_list = port_info.get("services", []) if port_info else []
             last_scan_ts = port_info.get("last_scan") if port_info else None
             last_scan_fmt = format_ts(last_scan_ts) if last_scan_ts else None
-            devices_by_id[identifier] = {
+            device_entry = {
                 "kind": kind,
                 "identifier": identifier,
                 "ip": None,
@@ -700,6 +877,8 @@ def ui(request: Request):
                 "ports_summary": ", ".join(str(p) for p in ports_list[:6]),
                 "ports_count": len(ports_list),
             }
+            device_entry.update(assess_device_risk(device_entry))
+            devices_by_id[identifier] = device_entry
 
         devices = list(devices_by_id.values())
 
@@ -718,6 +897,11 @@ def ui(request: Request):
 
         return [d for d in devices if matches_filter(d)]
 
+    if not scan_lan:
+        lan_scan_results = lan_scan_results or cached_scan["lan"]
+    if not scan_ble:
+        ble_scan_results = ble_scan_results or cached_scan["ble"]
+
     lan_devices = build_device_list("lan", lan_scan_results, known_lan, obs_lan, port_scan_cache)
     ble_devices = build_device_list("ble", ble_scan_results, known_ble, obs_ble)
     lan_sort_by = (request.query_params.get("sort_by") or "").lower()
@@ -727,6 +911,17 @@ def ui(request: Request):
     if lan_sort_by in LAN_SORT_FIELDS:
         lan_devices.sort(key=LAN_SORT_FIELDS[lan_sort_by], reverse=(lan_sort_dir == "desc"))
 
+    approved_devices = sorted(
+        [d for d in lan_devices if d.get("approved") == 1],
+        key=lambda item: (item.get("alias") or item.get("identifier")),
+    )
+    detail_id = request.query_params.get("detail_id")
+    with detail_cache_lock:
+        detail_scan = detailed_scan_cache.get(detail_id) if detail_id else None
+    last_scan_time = cached_scan.get("timestamp")
+    lan_summary = cached_scan.get("lan_summary", {})
+    wifi_summary = cached_scan.get("wifi_summary", {})
+
     recent_events = get_recent_events(event_type=event_type_filter)
     system_events = get_system_events(event_type_filter=event_type_filter)
     combined_events = recent_events + system_events
@@ -734,10 +929,15 @@ def ui(request: Request):
     combined_events = combined_events[:30]
 
     wifi_observations_raw = get_wifi_observations()
+    wifi_count = len(wifi_observations_raw)
+    wifi_observations = [
+        {**obs, "last_seen_fmt": format_ts(obs.get("last_seen"))}
+        for obs in wifi_observations_raw
+    ]
     observations_map = {
         "lan": obs_lan,
         "ble": obs_ble,
-        "wifi": {obs["bssid"]: obs for obs in wifi_observations_raw},
+        "wifi": {obs["bssid"]: obs for obs in wifi_observations_raw if obs.get("bssid")},
     }
     formatted_events = []
     for ev in combined_events:
@@ -760,18 +960,17 @@ def ui(request: Request):
         if event_ip and event_ip not in target_parts:
             target_parts.append(event_ip)
         target_label = " · ".join(target_parts) if target_parts else "-"
+        risk_level = ev.get("risk_level") or get_event_risk_level(ev.get("event_type"))
         formatted_events.append(
             {
                 **ev,
                 "timestamp_fmt": ts or ev.get("timestamp", ""),
                 "target_label": target_label,
+                "risk_level": risk_level,
+                "risk_label": EVENT_RISK_LABELS.get(risk_level, risk_level.title()),
+                "risk_color": EVENT_RISK_COLORS.get(risk_level, EVENT_RISK_COLORS["low"]),
             }
         )
-    wifi_count = len(wifi_observations_raw)
-    wifi_observations = [
-        {**obs, "last_seen_fmt": format_ts(obs.get("last_seen"))}
-        for obs in wifi_observations_raw
-    ]
 
     return templates.TemplateResponse(
         "ui.html",
@@ -801,6 +1000,12 @@ def ui(request: Request):
             "wifi_count": wifi_count,
             "lan_sort_by": lan_sort_by,
             "lan_sort_dir": lan_sort_dir,
+            "approved_devices": approved_devices,
+            "last_scan_time": last_scan_time,
+            "lan_summary": lan_summary,
+            "wifi_summary": wifi_summary,
+            "detail_scan": detail_scan,
+            "detail_id": detail_id,
         },
     )
 
@@ -821,6 +1026,47 @@ def set_lan(
         upsert_known("lan", identifier, alias, category, notes, approved)
 
     return RedirectResponse(return_url or "/ui", status_code=303)
+
+
+@app.post("/lan/scan")
+def lan_manual_scan(
+    identifier: str = Form(...),
+    return_url: str = Form("/ui"),
+):
+    observations = get_observations("lan")
+    entry = observations.get(identifier, {})
+    ip = entry.get("last_ip")
+    detail: Dict[str, Any] = {
+        "identifier": identifier,
+        "ip": ip,
+        "timestamp": now().isoformat(),
+    }
+    previous_entry = get_port_scan("lan", identifier)
+    previous_ports = set(previous_entry.get("ports", [])) if previous_entry else set()
+    if not ip:
+        detail["error"] = "No hay IP conocida para este dispositivo."
+    else:
+        try:
+            scan_result = scan_ports_for_ip(ip)
+            record_port_scan("lan", identifier, ip, identifier, scan_result["ports"], scan_result["services"])
+            added_ports = sorted(set(scan_result.get("ports", [])) - previous_ports)
+            if added_ports:
+                log_event("new_open_ports", "lan", identifier, f"Nuevos puertos: {', '.join(str(p) for p in added_ports)}")
+            detail.update(
+                {
+                    "ports": scan_result.get("ports", []),
+                    "services": scan_result.get("services", []),
+                }
+            )
+        except Exception as exc:
+            detail["error"] = str(exc)
+
+    with detail_cache_lock:
+        detailed_scan_cache[identifier] = detail
+
+    redirect = return_url or "/ui"
+    separator = "&" if "?" in redirect else "?"
+    return RedirectResponse(f"{redirect}{separator}detail_id={identifier}", status_code=303)
 
 
 @app.post("/set/ble")
