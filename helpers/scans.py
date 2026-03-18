@@ -5,8 +5,19 @@ import subprocess
 from typing import Any, Dict, List
 
 
+INFO_PREFIXES = (
+    "Service Info:",
+    "OS details:",
+    "Network Distance:",
+    "Aggressive OS guesses:",
+    "Device type:",
+    "Running:",
+    "No exact OS matches for host:",
+)
+
+
 def scan_ports_for_ip(ip: str, timeout: int = 60) -> Dict[str, Any]:
-    cmd = ["nmap", "-Pn", "-T4", "-F", ip]
+    cmd = ["nmap", "-Pn", "-T4", "-sV", "--version-all", "--reason", ip]
     try:
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True, timeout=timeout)
     except FileNotFoundError as exc:
@@ -18,6 +29,7 @@ def scan_ports_for_ip(ip: str, timeout: int = 60) -> Dict[str, Any]:
 
     ports: List[int] = []
     services: List[str] = []
+    info_lines: List[str] = []
 
     for line in output.splitlines():
         match = re.search(r"^(\d+)/tcp\s+open\s+([^\s]+)\s*(.*)$", line)
@@ -31,5 +43,11 @@ def scan_ports_for_ip(ip: str, timeout: int = 60) -> Dict[str, Any]:
         if extra:
             label = f"{label} {extra}"
         services.append(label)
+    for line in output.splitlines():
+        stripped = line.strip()
+        for prefix in INFO_PREFIXES:
+            if stripped.startswith(prefix):
+                info_lines.append(stripped[len(prefix) :].strip())
+                break
 
-    return {"ports": ports, "services": services, "raw": output}
+    return {"ports": ports, "services": services, "raw": output, "info_lines": info_lines}

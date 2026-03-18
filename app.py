@@ -21,6 +21,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List, Callable
 from collections import Counter, deque
 from threading import Event, Lock, Thread
+import socket
 
 app = FastAPI(title="Pi Network Sensor")
 
@@ -163,6 +164,15 @@ detail_cache_lock = Lock()
 
 
 init_db()
+
+
+def get_local_ip() -> str:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            return sock.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
 
 
 def now() -> datetime:
@@ -705,6 +715,7 @@ def ui(request: Request):
     filter_mode = request.query_params.get("filter", "all")
     search = (request.query_params.get("q") or "").strip().lower()
     event_type_filter = request.query_params.get("event_type")
+    local_ip = get_local_ip()
 
     errors: List[str] = []
     with scan_cache_lock:
@@ -960,14 +971,16 @@ def ui(request: Request):
             obs_name = obs.get("vendor") or obs.get("display_name") or obs.get("ssid") or obs.get("alias")
         obs_ip = obs.get("last_ip") if obs else None
         target_parts: List[str] = []
+        event_ip = ev.get("ip")
+        identifier_ip = obs_ip or event_ip
         if identifier:
-            target_parts.append(identifier)
+            identifier_label = identifier
+            if identifier_ip:
+                identifier_label = f"{identifier} ({identifier_ip})"
+            target_parts.append(identifier_label)
         if obs_name and obs_name not in target_parts:
             target_parts.append(obs_name)
-        if obs_ip and obs_ip not in target_parts:
-            target_parts.append(obs_ip)
-        event_ip = ev.get("ip")
-        if event_ip and event_ip not in target_parts:
+        if event_ip and event_ip not in (identifier_ip, obs_ip):
             target_parts.append(event_ip)
         target_label = " · ".join(target_parts) if target_parts else "-"
         risk_level = ev.get("risk_level") or get_event_risk_level(ev.get("event_type"))
@@ -1014,6 +1027,7 @@ def ui(request: Request):
             "last_scan_time": last_scan_time,
             "lan_summary": lan_summary,
             "wifi_summary": wifi_summary,
+            "local_ip": local_ip,
             "detail_scan": detail_scan,
             "detail_id": detail_id,
         },
@@ -1066,6 +1080,8 @@ def lan_manual_scan(
                 {
                     "ports": scan_result.get("ports", []),
                     "services": scan_result.get("services", []),
+                    "raw": scan_result.get("raw"),
+                    "info_lines": scan_result.get("info_lines", []),
                 }
             )
         except Exception as exc:

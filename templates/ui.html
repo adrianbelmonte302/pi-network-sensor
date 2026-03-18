@@ -675,6 +675,11 @@
         <p class="stat-card__value">{{ wifi_count }}</p>
         <p class="stat-card__hint">Últimos {{ wifi_observations|length }}</p>
       </article>
+      <article class="stat-card">
+        <div class="stat-card__label">IP local</div>
+        <p class="stat-card__value">{{ local_ip }}</p>
+        <p class="stat-card__hint">Usada para escaneos y eventos</p>
+      </article>
     </section>
 
     <section class="approved-section">
@@ -1010,6 +1015,20 @@
           {% else %}
             <p>Puertos descubiertos: {{ detail_scan.ports | join(', ') if detail_scan.ports else 'Ninguno' }}</p>
             <p>Servicios: {{ detail_scan.services | join(', ') if detail_scan.services else 'Sin servicios identificados' }}</p>
+            {% if detail_scan.info_lines %}
+              <div>
+                <p><strong>Información detectada</strong></p>
+                <ul>
+                  {% for info in detail_scan.info_lines %}
+                    <li>{{ info }}</li>
+                  {% endfor %}
+                </ul>
+              </div>
+            {% endif %}
+            <details>
+              <summary>Mostrar salida completa de nmap</summary>
+              <pre>{{ detail_scan.raw or '' }}</pre>
+            </details>
           {% endif %}
         </div>
         {% else %}
