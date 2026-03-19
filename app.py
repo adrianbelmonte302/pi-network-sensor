@@ -104,6 +104,7 @@ MONITOR_STATUS_LABELS = {
 }
 monitor_stop_event = Event()
 monitor_lock = Lock()
+MONITOR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 SCAN_HISTORY_LIMIT = 6
 SCAN_TYPES = {
     "rapido": "Rápido",
@@ -456,7 +457,7 @@ def upsert_observation(kind: str, identifier: str, ip: Optional[str] = None, ven
         previous_ip = row["last_ip"] or ""
         previous_vendor = row["vendor"] or ""
         previous_name = row["display_name"] or ""
-        previous_previous_ip = row.get("previous_ip") or ""
+        previous_previous_ip = row["previous_ip"] if "previous_ip" in row.keys() and row["previous_ip"] else ""
         new_previous_ip = previous_previous_ip
         last_ip = ip if ip else previous_ip
         if ip and previous_ip and ip != previous_ip:
