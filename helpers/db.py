@@ -129,6 +129,12 @@ def init_db() -> None:
     )
     """
     )
+    cur.execute(
+        """
+    CREATE UNIQUE INDEX IF NOT EXISTS monitor_status_kind_identifier_idx
+    ON monitor_status(kind, identifier)
+    """
+    )
 
     cur.execute(
         """
