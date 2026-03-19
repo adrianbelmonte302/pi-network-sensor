@@ -12,6 +12,11 @@ from helpers.db import (
     get_wifi_observations,
     record_scan_history,
     get_scan_history,
+    record_monitor_history,
+    get_monitor_history_since,
+    delete_monitor_history_before,
+    get_monitor_status,
+    upsert_monitor_status,
 )
 from helpers.scans import scan_ports_for_ip
 import subprocess
@@ -91,6 +96,12 @@ PORT_SCAN_INTERVAL = timedelta(minutes=30)
 SCAN_INTERVAL_SECONDS = _int_env("SCAN_INTERVAL_SECONDS", 300)
 app.state.scan_interval = SCAN_INTERVAL_SECONDS
 MONITOR_DEFAULT_INTERVAL_MINUTES = _int_env("MONITOR_DEFAULT_INTERVAL_MINUTES", 3)
+MONITOR_HISTORY_RETENTION_DAYS = 5
+MONITOR_LOG_PATH = BASE_DIR / "logs" / "monitor_history.log"
+MONITOR_STATUS_LABELS = {
+    "presente": "Presente",
+    "ausente": "Ausente",
+}
 SCAN_HISTORY_LIMIT = 6
 SCAN_TYPES = {
     "rapido": "Rápido",
@@ -424,12 +435,16 @@ def upsert_observation(kind: str, identifier: str, ip: Optional[str] = None, ven
         previous_ip = row["last_ip"] or ""
         previous_vendor = row["vendor"] or ""
         previous_name = row["display_name"] or ""
+        previous_previous_ip = row.get("previous_ip") or ""
+        new_previous_ip = previous_previous_ip
         last_ip = ip if ip else previous_ip
+        if ip and previous_ip and ip != previous_ip:
+            new_previous_ip = previous_ip
         updated_vendor = vendor_value or previous_vendor
         updated_name = name_value or previous_name
         cur.execute(
-            "UPDATE observations SET last_seen=?, last_ip=?, vendor=?, display_name=? WHERE kind=? AND identifier=?",
-            (now_ts, last_ip, updated_vendor, updated_name, kind, identifier),
+            "UPDATE observations SET last_seen=?, last_ip=?, previous_ip=?, vendor=?, display_name=? WHERE kind=? AND identifier=?",
+            (now_ts, last_ip, new_previous_ip, updated_vendor, updated_name, kind, identifier),
         )
         con.commit()
         con.close()
@@ -552,6 +567,55 @@ def _background_scan_worker(identifier: str, ip: str, scan_type: str) -> None:
     _store_recent_detail(identifier, detail)
 
 
+def _append_monitor_history_log(entries: List[Dict[str, Any]]) -> None:
+    if not entries:
+        return
+    MONITOR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with MONITOR_LOG_PATH.open("a", encoding="utf-8") as log_file:
+        for entry in entries:
+            timestamp = entry.get("timestamp") or ""
+            identifier = entry.get("identifier") or ""
+            status = entry.get("status") or ""
+            ip = entry.get("ip") or "-"
+            previous_ip = entry.get("previous_ip") or "-"
+            detail = (entry.get("detail") or "").replace("\n", " ").strip()
+            log_file.write(
+                f"{timestamp} {identifier} {status} ip={ip} prev={previous_ip} {detail}\n"
+            )
+
+
+def _sync_monitor_statuses(kind: str, devices: List[Dict[str, Any]]) -> None:
+    for device in devices:
+        identifier = device["identifier"]
+        status = device["status"]
+        ip = device.get("ip") or ""
+        previous_ip = device.get("previous_ip") or ""
+        last_seen = device.get("last_seen") or ""
+        status_detail = device.get("status_detail") or ""
+
+        stored_status = get_monitor_status(kind, identifier)
+        stored_status_value = stored_status.get("status") if stored_status else None
+        stored_ip = stored_status.get("ip") if stored_status else ""
+
+        ip_changed = bool(ip and stored_ip and ip != stored_ip)
+        should_record = stored_status_value != status
+        event_detail = status_detail
+        if not should_record and ip_changed and status == "presente":
+            should_record = True
+            if not event_detail:
+                event_detail = f"Cambio IP: {stored_ip} → {ip}"
+
+        if should_record:
+            record_monitor_history(
+                kind,
+                identifier,
+                status,
+                ip,
+                previous_ip or stored_ip,
+                event_detail,
+            )
+
+        upsert_monitor_status(kind, identifier, status, last_seen, ip, previous_ip)
 def get_known(kind):
     con = get_connection()
     cur = con.cursor()
@@ -1142,6 +1206,8 @@ def ui(request: Request):
             "scan_history": scan_history,
             "scan_types": SCAN_TYPES,
             "monitor_interval_default": MONITOR_DEFAULT_INTERVAL_MINUTES,
+            "monitor_log_path": str(MONITOR_LOG_PATH),
+            "monitor_history_retention_days": MONITOR_HISTORY_RETENTION_DAYS,
         },
     )
 
@@ -1170,40 +1236,75 @@ def monitor_devices(interval_minutes: Optional[int] = None):
             if delta <= window:
                 status = "presente"
                 status_class = "present"
+        current_ip = obs.get("last_ip") or "-"
+        previous_ip = obs.get("previous_ip") or ""
+        ip_note = ""
+        if previous_ip and previous_ip != current_ip and current_ip != "-":
+            ip_note = f"Anteriormente {previous_ip}"
+        status_detail = ""
+        if status == "presente":
+            if previous_ip and previous_ip != current_ip and current_ip != "-":
+                status_detail = f"Cambio IP: {previous_ip} → {current_ip}"
+            else:
+                status_detail = "Dispositivo presente"
+        else:
+            last_seen_fmt = format_ts(obs.get("last_seen"))
+            status_detail = f"No detectado desde {last_seen_fmt or 'desconocido'}"
         device_name = (
             obs.get("display_name")
             or obs.get("vendor")
-            or obs.get("alias")
             or known_entry.get("alias")
             or "-"
         )
         devices.append(
             {
                 "identifier": identifier,
-                "ip": obs.get("last_ip") or "-",
+                "ip": current_ip,
+                "previous_ip": previous_ip,
                 "vendor": obs.get("vendor") or "-",
                 "alias": known_entry.get("alias", ""),
                 "category": known_entry.get("category", ""),
                 "approved": known_entry.get("approved", 0),
                 "notes": known_entry.get("notes", ""),
                 "status": status,
-                "status_label": "Presente" if status == "presente" else "Ausente",
+                "status_label": MONITOR_STATUS_LABELS.get(status, status.title()),
                 "status_class": status_class,
+                "status_detail": status_detail,
                 "device_name": device_name,
                 "last_seen": obs.get("last_seen"),
                 "last_seen_fmt": format_ts(obs.get("last_seen")) or "-",
-                "first_seen_fmt": format_ts(obs.get("first_seen")) or "-",
-                "is_new": _is_new(obs.get("first_seen")),
                 "last_seen_delta": last_seen_seconds,
+                "is_new": _is_new(obs.get("first_seen")),
+                "ip_note": ip_note,
             }
         )
     devices.sort(key=lambda d: (d["status"] != "presente", -(d["last_seen_delta"] or 0), d["identifier"]))
+    _sync_monitor_statuses("lan", devices)
+    cutoff_iso = (now_ts - timedelta(days=MONITOR_HISTORY_RETENTION_DAYS)).isoformat()
+    old_entries = delete_monitor_history_before("lan", cutoff_iso)
+    _append_monitor_history_log(old_entries)
+    history_entries = get_monitor_history_since("lan", cutoff_iso)
+    history_payload = [
+        {
+            "timestamp": entry.get("timestamp"),
+            "timestamp_fmt": format_ts(entry.get("timestamp")) or entry.get("timestamp"),
+            "identifier": entry.get("identifier"),
+            "status": entry.get("status"),
+            "status_label": MONITOR_STATUS_LABELS.get(entry.get("status"), entry.get("status", "").title()),
+            "ip": entry.get("ip") or "-",
+            "previous_ip": entry.get("previous_ip") or "-",
+            "detail": entry.get("detail") or "-",
+        }
+        for entry in history_entries
+    ]
     return JSONResponse(
         {
             "timestamp": now_ts.isoformat(),
             "interval_minutes": interval_value,
             "interval_seconds": interval_value * 60,
             "devices": devices,
+            "history": history_payload,
+            "history_retention_days": MONITOR_HISTORY_RETENTION_DAYS,
         }
     )
 

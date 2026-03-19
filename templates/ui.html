@@ -598,6 +598,31 @@
       font-size: 0.9rem;
     }
 
+    .monitor-history {
+      margin-top: 24px;
+      background: var(--surface);
+      border-radius: 14px;
+      border: 1px solid rgba(226, 232, 240, 0.7);
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+      padding: 16px;
+    }
+
+    .monitor-history-note {
+      margin-top: 12px;
+      margin-bottom: 12px;
+      font-size: 0.85rem;
+      color: #475569;
+    }
+
+    .monitor-history table {
+      margin-top: 0;
+    }
+
+    .monitor-ip-note {
+      font-size: 0.8rem;
+      color: #475569;
+    }
+
     .status-chip {
       display: inline-flex;
       align-items: center;
@@ -1230,6 +1255,35 @@
           </tbody>
         </table>
       </div>
+      <div class="monitor-history">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Histórico de presencia</p>
+            <p class="lead">Últimos {{ monitor_history_retention_days }} días</p>
+          </div>
+        </div>
+        <p class="monitor-history-note">
+          Solo se muestran {{ monitor_history_retention_days }} días en pantalla; el resto se guarda en <code>{{ monitor_log_path }}</code>.
+        </p>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Dispositivo</th>
+                <th>Estado</th>
+                <th>IP</th>
+                <th>Detalle</th>
+              </tr>
+            </thead>
+            <tbody id="monitor-history-body">
+              <tr>
+                <td colspan="5">Esperando historial...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <div class="tab-panel" data-tab="events">
@@ -1332,6 +1386,7 @@
     const monitorLastChecked = document.getElementById('monitor-last-checked');
     const monitorRefreshButton = document.getElementById('monitor-refresh');
     const monitorDefaultInterval = {{ monitor_interval_default }};
+    const monitorHistoryBody = document.getElementById('monitor-history-body');
     let monitorRefreshTimer;
     const monitorStatuses = {};
 
@@ -1364,6 +1419,7 @@
           monitorLastChecked.textContent = new Date(payload.timestamp).toLocaleString();
         }
         renderMonitorRows(payload.devices || []);
+        renderMonitorHistory(payload.history || []);
       } catch (error) {
         if (monitorTableBody) {
           monitorTableBody.innerHTML = `<tr><td colspan="6">Error cargando monitor: ${error?.message || 'Desconocido'}</td></tr>`;
@@ -1393,35 +1449,61 @@
         monitorTableBody.innerHTML = '<tr><td colspan="6">No hay dispositivos registrados.</td></tr>';
         return;
       }
-      const rows = devices.map(device => {
-        const previous = monitorStatuses[device.identifier];
-        const changed = previous && previous !== device.status;
-        monitorStatuses[device.identifier] = device.status;
-        const statusChip = `
-          <span class="status-chip ${device.status_class}">
-            ${escapeHtml(device.status_label)}
-          </span>
-        `;
-        const noteParts = [];
-        if (device.alias) noteParts.push(device.alias);
-        if (device.category) noteParts.push(device.category);
-        if (device.notes) noteParts.push(device.notes);
-        const combinedNotes = noteParts.length ? noteParts.join(' · ') : '-';
-        return `
-          <tr class="${changed ? 'status-flash' : ''}" data-identifier="${device.identifier}">
-            <td>${escapeHtml(device.identifier)}</td>
-            <td>${escapeHtml(device.device_name)}</td>
-            <td>${escapeHtml(device.ip)}</td>
-            <td>${escapeHtml(device.last_seen_fmt)}</td>
-            <td>${statusChip}</td>
-            <td>${escapeHtml(combinedNotes)}</td>
-          </tr>
-        `;
-      }).join('');
+        const rows = devices.map(device => {
+          const previous = monitorStatuses[device.identifier];
+          const changed = previous && previous !== device.status;
+          monitorStatuses[device.identifier] = device.status;
+          const statusChip = `
+            <span class="status-chip ${device.status_class}">
+              ${escapeHtml(device.status_label)}
+            </span>
+          `;
+          const ipNote = device.ip_note ? `<div class="monitor-ip-note">${escapeHtml(device.ip_note)}</div>` : "";
+          const noteParts = [];
+          if (device.alias) noteParts.push(device.alias);
+          if (device.category) noteParts.push(device.category);
+          if (device.notes) noteParts.push(device.notes);
+          const combinedNotes = noteParts.length ? noteParts.join(' · ') : '-';
+          return `
+            <tr class="${changed ? 'status-flash' : ''}" data-identifier="${device.identifier}">
+              <td>${escapeHtml(device.identifier)}</td>
+              <td>${escapeHtml(device.device_name)}</td>
+              <td>${escapeHtml(device.ip)}${ipNote}</td>
+              <td>${escapeHtml(device.last_seen_fmt)}</td>
+              <td>${statusChip}</td>
+              <td>${escapeHtml(combinedNotes)}</td>
+            </tr>
+          `;
+        }).join('');
       monitorTableBody.innerHTML = rows;
       document.querySelectorAll('.status-flash').forEach(row => {
         setTimeout(() => row.classList.remove('status-flash'), 2200);
       });
+    }
+
+    function renderMonitorHistory(entries) {
+      if (!monitorHistoryBody) {
+        return;
+      }
+      if (!entries.length) {
+        monitorHistoryBody.innerHTML = '<tr><td colspan="5">No hay eventos recientes.</td></tr>';
+        return;
+      }
+      const rows = entries.map(entry => {
+        return `
+          <tr>
+            <td>${escapeHtml(entry.timestamp_fmt)}</td>
+            <td>${escapeHtml(entry.identifier)}</td>
+            <td>${escapeHtml(entry.status_label)}</td>
+            <td>
+              ${escapeHtml(entry.ip)}
+              ${entry.previous_ip && entry.previous_ip !== '-' ? `<div class="monitor-ip-note">Anteriormente ${escapeHtml(entry.previous_ip)}</div>` : ''}
+            </td>
+            <td>${escapeHtml(entry.detail)}</td>
+          </tr>
+        `;
+      }).join('');
+      monitorHistoryBody.innerHTML = rows;
     }
 
     if (monitorTableBody && monitorIntervalInput) {

@@ -70,6 +70,7 @@ def init_db() -> None:
 
     _ensure_column(cur, "observations", "vendor", "TEXT DEFAULT ''")
     _ensure_column(cur, "observations", "display_name", "TEXT DEFAULT ''")
+    _ensure_column(cur, "observations", "previous_ip", "TEXT DEFAULT ''")
 
     cur.execute(
         """
@@ -95,6 +96,35 @@ def init_db() -> None:
         services TEXT,
         last_scan TEXT,
         PRIMARY KEY(kind,identifier)
+    )
+    """
+    )
+
+    cur.execute(
+        """
+    CREATE TABLE IF NOT EXISTS monitor_history(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT,
+        identifier TEXT,
+        status TEXT,
+        timestamp TEXT,
+        ip TEXT,
+        previous_ip TEXT,
+        detail TEXT
+    )
+    """
+    )
+
+    cur.execute(
+        """
+    CREATE TABLE IF NOT EXISTS monitor_status(
+        kind TEXT,
+        identifier TEXT PRIMARY KEY,
+        status TEXT,
+        last_seen TEXT,
+        ip TEXT,
+        previous_ip TEXT,
+        last_changed TEXT
     )
     """
     )
@@ -367,5 +397,95 @@ def get_wifi_observations(limit: int = 25) -> List[Dict[str, Any]]:
     cur = con.cursor()
     cur.execute("SELECT * FROM wifi_observations ORDER BY last_seen DESC LIMIT ?", (limit,))
     rows = cur.fetchall()
+    con.close()
+    return [dict(row) for row in rows]
+
+
+def record_monitor_history(
+    kind: str,
+    identifier: str,
+    status: str,
+    ip: str,
+    previous_ip: str,
+    detail: str,
+) -> None:
+    con = get_connection()
+    cur = con.cursor()
+    now_ts = _now_iso()
+    cur.execute(
+        """
+    INSERT INTO monitor_history(kind,identifier,status,timestamp,ip,previous_ip,detail)
+    VALUES(?,?,?,?,?,?,?)
+    """,
+        (kind, identifier, status, now_ts, ip or "", previous_ip or "", detail or ""),
+    )
+    con.commit()
+    con.close()
+
+
+def get_monitor_status(kind: str, identifier: str) -> Optional[Dict[str, Any]]:
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        "SELECT * FROM monitor_status WHERE kind=? AND identifier=?", (kind, identifier)
+    )
+    row = cur.fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def upsert_monitor_status(
+    kind: str,
+    identifier: str,
+    status: str,
+    last_seen: Optional[str],
+    ip: str,
+    previous_ip: str,
+) -> None:
+    con = get_connection()
+    cur = con.cursor()
+    now_ts = _now_iso()
+    cur.execute(
+        """
+    INSERT INTO monitor_status(kind,identifier,status,last_seen,ip,previous_ip,last_changed)
+    VALUES(?,?,?,?,?,?,?)
+    ON CONFLICT(kind,identifier) DO UPDATE SET
+      status=excluded.status,
+      last_seen=excluded.last_seen,
+      ip=excluded.ip,
+      previous_ip=excluded.previous_ip,
+      last_changed=excluded.last_changed
+    """,
+        (kind, identifier, status, last_seen or "", ip or "", previous_ip or "", now_ts),
+    )
+    con.commit()
+    con.close()
+
+
+def get_monitor_history_since(kind: str, since_iso: str, limit: int = 100) -> List[Dict[str, Any]]:
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        "SELECT * FROM monitor_history WHERE kind=? AND timestamp>=? ORDER BY timestamp DESC LIMIT ?",
+        (kind, since_iso, limit),
+    )
+    rows = cur.fetchall()
+    con.close()
+    return [dict(row) for row in rows]
+
+
+def delete_monitor_history_before(kind: str, before_iso: str) -> List[Dict[str, Any]]:
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        "SELECT * FROM monitor_history WHERE kind=? AND timestamp<? ORDER BY timestamp ASC",
+        (kind, before_iso),
+    )
+    rows = cur.fetchall()
+    cur.execute(
+        "DELETE FROM monitor_history WHERE kind=? AND timestamp<?",
+        (kind, before_iso),
+    )
+    con.commit()
     con.close()
     return [dict(row) for row in rows]
