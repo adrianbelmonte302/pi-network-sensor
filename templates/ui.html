@@ -537,6 +537,62 @@
       color: #b91c1c;
     }
 
+    .monitor-settings {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .monitor-settings input[type="number"] {
+      width: 80px;
+    }
+
+    .monitor-table td {
+      vertical-align: middle;
+    }
+
+    .monitor-note {
+      margin-top: 4px;
+      margin-bottom: 8px;
+      color: #475569;
+      font-size: 0.9rem;
+    }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 9px;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .status-chip.present {
+      background: rgba(16, 185, 129, 0.12);
+      color: #047857;
+    }
+    .status-chip.missing {
+      background: rgba(239, 68, 68, 0.12);
+      color: #b91c1c;
+    }
+
+    .status-flash {
+      animation: monitor-flash 1.6s ease;
+    }
+
+    @keyframes monitor-flash {
+      from {
+        box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.4);
+      }
+      to {
+        box-shadow: none;
+      }
+    }
+
     .error-card {
       border-color: rgba(239, 68, 68, 0.7);
       background: rgba(254, 242, 242, 0.9);
@@ -750,6 +806,7 @@
       <button type="button" class="tab-button" data-tab="ble">Bluetooth</button>
       <button type="button" class="tab-button" data-tab="wifi">WiFi</button>
       <button type="button" class="tab-button" data-tab="detail">Detalle LAN</button>
+      <button type="button" class="tab-button" data-tab="monitor">Monitor de presencia</button>
       <button type="button" class="tab-button" data-tab="events">Eventos recientes</button>
     </div>
 
@@ -1037,6 +1094,49 @@
       </div>
     </div>
 
+    <div class="tab-panel" data-tab="monitor">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Monitor de presencia</p>
+          <p class="lead">
+            Comprobaciones cada <span id="monitor-interval-label">{{ monitor_interval_default }}</span> minutos
+          </p>
+          <p class="monitor-note">
+            Detecta rápidamente cuándo llegan o se van los dispositivos que ya han sido vistos en la red.
+          </p>
+        </div>
+        <div class="monitor-settings">
+          <label>
+            Intervalo (min)
+            <input type="number" id="monitor-interval" min="1" max="60" value="{{ monitor_interval_default }}">
+          </label>
+          <button type="button" class="button secondary" id="monitor-refresh">Actualizar ahora</button>
+        </div>
+      </div>
+      <p class="monitor-note">
+        Última comprobación: <span id="monitor-last-checked">—</span>
+      </p>
+      <div class="table-wrapper">
+        <table class="monitor-table">
+          <thead>
+            <tr>
+              <th>Dispositivo</th>
+              <th>Nombre</th>
+              <th>IP</th>
+              <th>Última vista</th>
+              <th>Estado</th>
+              <th>Notas / Tipo</th>
+            </tr>
+          </thead>
+          <tbody id="monitor-table-body">
+            <tr>
+              <td colspan="6">Esperando datos...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="tab-panel" data-tab="events">
       <div class="panel-heading">
         <div>
@@ -1068,6 +1168,7 @@
               <th>Hora</th>
               <th>Tipo</th>
               <th>Dispositivo / IP</th>
+              <th>Nombre</th>
               <th>Detalle</th>
               <th>Riesgo</th>
             </tr>
@@ -1078,6 +1179,7 @@
               <td>{{ ev.timestamp_fmt or '-' }}</td>
               <td>{{ ev.event_type }}</td>
               <td>{{ ev.target_label }}</td>
+              <td>{{ ev.device_name }}</td>
               <td>{{ ev.detail or '-' }}</td>
               <td>
                 <span class="risk-badge risk-{{ ev.risk_level }}">
@@ -1127,6 +1229,115 @@
     const storedTab = localStorage.getItem('pi_sensor_tab');
     if (storedTab) {
       showTab(storedTab);
+    }
+
+    const monitorTableBody = document.getElementById('monitor-table-body');
+    const monitorIntervalInput = document.getElementById('monitor-interval');
+    const monitorIntervalLabel = document.getElementById('monitor-interval-label');
+    const monitorLastChecked = document.getElementById('monitor-last-checked');
+    const monitorRefreshButton = document.getElementById('monitor-refresh');
+    const monitorDefaultInterval = {{ monitor_interval_default }};
+    let monitorRefreshTimer;
+    const monitorStatuses = {};
+
+    function getMonitorIntervalMinutes() {
+      const parsed = parseInt(monitorIntervalInput?.value, 10);
+      if (Number.isNaN(parsed) || parsed < 1) {
+        return monitorDefaultInterval;
+      }
+      return Math.min(60, parsed);
+    }
+
+    function scheduleMonitorRefresh() {
+      clearTimeout(monitorRefreshTimer);
+      monitorRefreshTimer = setTimeout(fetchMonitorData, getMonitorIntervalMinutes() * 60000);
+    }
+
+    async function fetchMonitorData() {
+      const interval = getMonitorIntervalMinutes();
+      if (monitorIntervalLabel) {
+        monitorIntervalLabel.textContent = interval;
+      }
+      try {
+        const params = new URLSearchParams({ interval_minutes: String(interval) });
+        const response = await fetch(`/api/monitor?${params.toString()}`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = await response.json();
+        if (monitorLastChecked && payload.timestamp) {
+          monitorLastChecked.textContent = new Date(payload.timestamp).toLocaleString();
+        }
+        renderMonitorRows(payload.devices || []);
+      } catch (error) {
+        if (monitorTableBody) {
+          monitorTableBody.innerHTML = `<tr><td colspan="6">Error cargando monitor: ${error?.message || 'Desconocido'}</td></tr>`;
+        }
+      } finally {
+        scheduleMonitorRefresh();
+      }
+    }
+
+    function escapeHtml(value) {
+      if (!value) {
+        return "-";
+      }
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function renderMonitorRows(devices) {
+      if (!monitorTableBody) {
+        return;
+      }
+      if (!devices.length) {
+        monitorTableBody.innerHTML = '<tr><td colspan="6">No hay dispositivos registrados.</td></tr>';
+        return;
+      }
+      const rows = devices.map(device => {
+        const previous = monitorStatuses[device.identifier];
+        const changed = previous && previous !== device.status;
+        monitorStatuses[device.identifier] = device.status;
+        const statusChip = `
+          <span class="status-chip ${device.status_class}">
+            ${escapeHtml(device.status_label)}
+          </span>
+        `;
+        const noteParts = [];
+        if (device.alias) noteParts.push(device.alias);
+        if (device.category) noteParts.push(device.category);
+        if (device.notes) noteParts.push(device.notes);
+        const combinedNotes = noteParts.length ? noteParts.join(' · ') : '-';
+        return `
+          <tr class="${changed ? 'status-flash' : ''}" data-identifier="${device.identifier}">
+            <td>${escapeHtml(device.identifier)}</td>
+            <td>${escapeHtml(device.device_name)}</td>
+            <td>${escapeHtml(device.ip)}</td>
+            <td>${escapeHtml(device.last_seen_fmt)}</td>
+            <td>${statusChip}</td>
+            <td>${escapeHtml(combinedNotes)}</td>
+          </tr>
+        `;
+      }).join('');
+      monitorTableBody.innerHTML = rows;
+      document.querySelectorAll('.status-flash').forEach(row => {
+        setTimeout(() => row.classList.remove('status-flash'), 2200);
+      });
+    }
+
+    if (monitorTableBody && monitorIntervalInput) {
+      monitorIntervalInput.addEventListener('change', () => {
+        if (monitorIntervalLabel) {
+          monitorIntervalLabel.textContent = getMonitorIntervalMinutes();
+        }
+        fetchMonitorData();
+      });
+      monitorRefreshButton?.addEventListener('click', () => fetchMonitorData());
+      fetchMonitorData();
     }
   </script>
 </body>

@@ -88,6 +88,7 @@ PORT_SCAN_INTERVAL = timedelta(minutes=30)
 
 SCAN_INTERVAL_SECONDS = _int_env("SCAN_INTERVAL_SECONDS", 300)
 app.state.scan_interval = SCAN_INTERVAL_SECONDS
+MONITOR_DEFAULT_INTERVAL_MINUTES = _int_env("MONITOR_DEFAULT_INTERVAL_MINUTES", 3)
 
 SENSITIVE_PORTS = {22, 23, 80, 443, 445, 554, 3389, 5900, 8080, 8443}
 
@@ -1003,6 +1004,7 @@ def ui(request: Request):
                 **ev,
                 "timestamp_fmt": ts or ev.get("timestamp", ""),
                 "target_label": target_label,
+                "device_name": obs_name or "-",
                 "risk_level": risk_level,
                 "risk_label": EVENT_RISK_LABELS.get(risk_level, risk_level.title()),
                 "risk_color": EVENT_RISK_COLORS.get(risk_level, EVENT_RISK_COLORS["low"]),
@@ -1044,7 +1046,70 @@ def ui(request: Request):
             "local_ip": local_ip,
             "detail_scan": detail_scan,
             "detail_id": detail_id,
+            "monitor_interval_default": MONITOR_DEFAULT_INTERVAL_MINUTES,
         },
+    )
+
+
+@app.get("/api/monitor", response_class=JSONResponse)
+def monitor_devices(interval_minutes: Optional[int] = None):
+    try:
+        interval_value = int(interval_minutes) if interval_minutes is not None else MONITOR_DEFAULT_INTERVAL_MINUTES
+    except (ValueError, TypeError):
+        interval_value = MONITOR_DEFAULT_INTERVAL_MINUTES
+    interval_value = max(1, min(60, interval_value))
+    window = timedelta(minutes=interval_value)
+    observed = get_observations("lan")
+    known_devices = get_known("lan")
+    now_ts = now()
+    devices: List[Dict[str, Any]] = []
+    for identifier, obs in observed.items():
+        known_entry = known_devices.get(identifier, {})
+        last_seen_dt = _parse_iso(obs.get("last_seen"))
+        last_seen_seconds: Optional[int] = None
+        status = "ausente"
+        status_class = "missing"
+        if last_seen_dt:
+            delta = now_ts - last_seen_dt
+            last_seen_seconds = int(delta.total_seconds())
+            if delta <= window:
+                status = "presente"
+                status_class = "present"
+        device_name = (
+            obs.get("display_name")
+            or obs.get("vendor")
+            or obs.get("alias")
+            or known_entry.get("alias")
+            or "-"
+        )
+        devices.append(
+            {
+                "identifier": identifier,
+                "ip": obs.get("last_ip") or "-",
+                "vendor": obs.get("vendor") or "-",
+                "alias": known_entry.get("alias", ""),
+                "category": known_entry.get("category", ""),
+                "approved": known_entry.get("approved", 0),
+                "notes": known_entry.get("notes", ""),
+                "status": status,
+                "status_label": "Presente" if status == "presente" else "Ausente",
+                "status_class": status_class,
+                "device_name": device_name,
+                "last_seen": obs.get("last_seen"),
+                "last_seen_fmt": format_ts(obs.get("last_seen")) or "-",
+                "first_seen_fmt": format_ts(obs.get("first_seen")) or "-",
+                "is_new": _is_new(obs.get("first_seen")),
+                "last_seen_delta": last_seen_seconds,
+            }
+        )
+    devices.sort(key=lambda d: (d["status"] != "presente", -(d["last_seen_delta"] or 0), d["identifier"]))
+    return JSONResponse(
+        {
+            "timestamp": now_ts.isoformat(),
+            "interval_minutes": interval_value,
+            "interval_seconds": interval_value * 60,
+            "devices": devices,
+        }
     )
 
 
