@@ -17,7 +17,19 @@ def get_connection() -> sqlite3.Connection:
     return con
 
 
-_ALLOWED_TABLES = frozenset({"known_devices", "observations", "events", "port_scans", "wifi_observations", "config"})
+_ALLOWED_TABLES = frozenset(
+    {
+        "known_devices",
+        "observations",
+        "events",
+        "port_scans",
+        "wifi_observations",
+        "config",
+        "monitor_history",
+        "monitor_status",
+        "scan_history",
+    }
+)
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -114,6 +126,7 @@ def init_db() -> None:
     )
     """
     )
+    _ensure_column(cur, "monitor_history", "history_type", "TEXT DEFAULT ''")
 
     cur.execute(
         """
@@ -415,16 +428,17 @@ def record_monitor_history(
     ip: str,
     previous_ip: str,
     detail: str,
+    history_type: str = "",
 ) -> None:
     con = get_connection()
     cur = con.cursor()
     now_ts = _now_iso()
     cur.execute(
         """
-    INSERT INTO monitor_history(kind,identifier,status,timestamp,ip,previous_ip,detail)
-    VALUES(?,?,?,?,?,?,?)
+    INSERT INTO monitor_history(kind,identifier,status,timestamp,ip,previous_ip,detail,history_type)
+    VALUES(?,?,?,?,?,?,?,?)
     """,
-        (kind, identifier, status, now_ts, ip or "", previous_ip or "", detail or ""),
+        (kind, identifier, status, now_ts, ip or "", previous_ip or "", detail or "", history_type or ""),
     )
     con.commit()
     con.close()

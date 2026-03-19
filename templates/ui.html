@@ -495,6 +495,23 @@
       padding-left: 18px;
     }
 
+    .history-row {
+      transition: background 0.2s ease;
+    }
+
+    .history-row--entry td {
+      background: rgba(59, 130, 246, 0.08);
+    }
+
+    .history-row--exit td {
+      background: rgba(239, 68, 68, 0.08);
+    }
+
+    .history-row--new td {
+      background: rgba(16, 185, 129, 0.12);
+      font-weight: 600;
+    }
+
     .approved-section table {
       font-size: 0.85rem;
       margin-top: 12px;
@@ -1268,14 +1285,15 @@
         <div class="table-wrapper">
           <table>
             <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Dispositivo</th>
-                <th>Estado</th>
-                <th>IP</th>
-                <th>Detalle</th>
-              </tr>
-            </thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Dispositivo</th>
+              <th>Alias</th>
+              <th>Estado</th>
+              <th>IP</th>
+              <th>Detalle</th>
+            </tr>
+          </thead>
             <tbody id="monitor-history-body">
               <tr>
                 <td colspan="5">Esperando historial...</td>
@@ -1493,10 +1511,13 @@
         return;
       }
       const rows = entries.map(entry => {
+        const historyType = entry.history_type || 'note';
+        const rowClass = historyType ? `history-row history-row--${historyType}` : 'history-row';
         return `
-          <tr>
+          <tr class="${rowClass}">
             <td>${escapeHtml(entry.timestamp_fmt)}</td>
             <td>${escapeHtml(entry.identifier)}</td>
+            <td>${escapeHtml(entry.alias)}</td>
             <td>${escapeHtml(entry.status_label)}</td>
             <td>
               ${escapeHtml(entry.ip)}

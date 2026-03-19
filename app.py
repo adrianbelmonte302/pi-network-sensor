@@ -622,8 +622,14 @@ def _sync_monitor_statuses(kind: str, devices: List[Dict[str, Any]]) -> None:
         ip_changed = bool(ip and stored_ip and ip != stored_ip)
         should_record = stored_status_value != status
         event_detail = status_detail
+        history_type = "note"
+        if stored_status_value is None:
+            history_type = "new" if status == "presente" else "exit"
+        elif status != stored_status_value:
+            history_type = "entry" if status == "presente" else "exit"
         if not should_record and ip_changed and status == "presente":
             should_record = True
+            history_type = "entry"
             if not event_detail:
                 event_detail = f"Cambio IP: {stored_ip} → {ip}"
 
@@ -635,6 +641,7 @@ def _sync_monitor_statuses(kind: str, devices: List[Dict[str, Any]]) -> None:
                 ip,
                 previous_ip or stored_ip,
                 event_detail,
+                history_type=history_type,
             )
 
         upsert_monitor_status(kind, identifier, status, last_seen, ip, previous_ip)
@@ -717,11 +724,13 @@ def collect_monitor_data(interval_minutes: Optional[int] = None) -> Dict[str, An
                 "timestamp": entry.get("timestamp"),
                 "timestamp_fmt": format_ts(entry.get("timestamp")) or entry.get("timestamp"),
                 "identifier": entry.get("identifier"),
+                "alias": known_devices.get(entry.get("identifier"), {}).get("alias", "") if entry.get("identifier") else "",
                 "status": entry.get("status"),
                 "status_label": MONITOR_STATUS_LABELS.get(entry.get("status"), entry.get("status", "").title()),
                 "ip": entry.get("ip") or "-",
                 "previous_ip": entry.get("previous_ip") or "-",
                 "detail": entry.get("detail") or "-",
+                "history_type": entry.get("history_type") or "note",
             }
             for entry in history_entries
         ]
