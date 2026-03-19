@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import re
 import subprocess
 from typing import Any, Dict, List
@@ -17,6 +18,10 @@ INFO_PREFIXES = (
 
 
 def scan_ports_for_ip(ip: str, timeout: int = 60) -> Dict[str, Any]:
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        raise RuntimeError(f"Dirección IP no válida: {ip!r}")
     cmd = ["nmap", "-Pn", "-T4", "-sV", "--version-all", "--reason", ip]
     try:
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True, timeout=timeout)

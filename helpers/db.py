@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,7 +17,18 @@ def get_connection() -> sqlite3.Connection:
     return con
 
 
+_ALLOWED_TABLES = frozenset({"known_devices", "observations", "events", "port_scans", "wifi_observations", "config"})
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
 def _ensure_column(cursor: sqlite3.Cursor, table: str, column: str, definition: str) -> None:
+    if table not in _ALLOWED_TABLES:
+        raise ValueError(f"Table '{table}' is not in the allowed list")
+    if not _IDENTIFIER_RE.match(column):
+        raise ValueError(f"Column name '{column}' contains invalid characters")
+    # definition is also validated to contain only safe SQL type tokens
+    if not re.match(r"^[A-Z ]+(?:DEFAULT\s+'[^']*')?$", definition, re.IGNORECASE):
+        raise ValueError(f"Column definition '{definition}' is not safe")
     cursor.execute(f"PRAGMA table_info({table})")
     existing = {row["name"] for row in cursor.fetchall()}
     if column not in existing:

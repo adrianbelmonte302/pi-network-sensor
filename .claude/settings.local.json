@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/belmo/GitHub/pi-network-sensor -type f \\\\\\(-name *.py -o -name *.txt -o -name requirements* -o -name *.md \\\\\\))",
+      "Bash(grep -r \"TODO\\\\|FIXME\\\\|BUG\\\\|HACK\\\\|XXX\" /c/Users/belmo/GitHub/pi-network-sensor --include=*.py --include=*.html)",
+      "Bash(grep -n \"subprocess\\\\|os\\\\.system\\\\|os\\\\.popen\\\\|shell\\\\s*=\" /c/Users/belmo/GitHub/pi-network-sensor/app.py /c/Users/belmo/GitHub/pi-network-sensor/helpers/*.py)",
+      "Bash(grep -rn \"\\\\.env\\\\|config\\\\.json\\\\|SECRET\\\\|PASSWORD\\\\|TOKEN\\\\|KEY\" /c/Users/belmo/GitHub/pi-network-sensor --include=*.py)"
+    ]
+  }
+}

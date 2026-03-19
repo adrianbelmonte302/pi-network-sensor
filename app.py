@@ -22,8 +22,21 @@ from typing import Optional, Dict, Any, List, Callable
 from collections import Counter, deque
 from threading import Event, Lock, Thread
 import socket
+from urllib.parse import urlparse
 
 app = FastAPI(title="Pi Network Sensor")
+
+
+def _safe_redirect(url: str, fallback: str = "/ui") -> str:
+    """Return url only if it is a safe relative path; otherwise return fallback."""
+    parsed = urlparse(url)
+    # Reject anything with a scheme or netloc (absolute URLs / protocol-relative)
+    if parsed.scheme or parsed.netloc:
+        return fallback
+    # Must start with /
+    if not url.startswith("/"):
+        return fallback
+    return url
 
 BASE_DIR = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -159,6 +172,7 @@ scan_cache: Dict[str, Any] = {
     "wifi_summary": {},
 }
 scan_stop_event = Event()
+_DETAIL_CACHE_MAX = 200  # cap entries to avoid unbounded memory growth
 detailed_scan_cache: Dict[str, Dict[str, Any]] = {}
 detail_cache_lock = Lock()
 
@@ -1049,7 +1063,7 @@ def set_lan(
     else:
         upsert_known("lan", identifier, alias, category, notes, approved)
 
-    return RedirectResponse(return_url or "/ui", status_code=303)
+    return RedirectResponse(_safe_redirect(return_url), status_code=303)
 
 
 @app.post("/lan/scan")
@@ -1084,13 +1098,18 @@ def lan_manual_scan(
                     "info_lines": scan_result.get("info_lines", []),
                 }
             )
-        except Exception as exc:
+        except RuntimeError as exc:
             detail["error"] = str(exc)
+        except Exception:
+            detail["error"] = "Error inesperado durante el escaneo."
 
     with detail_cache_lock:
+        if len(detailed_scan_cache) >= _DETAIL_CACHE_MAX:
+            # evict oldest entry (insertion-order guaranteed in Python 3.7+)
+            detailed_scan_cache.pop(next(iter(detailed_scan_cache)))
         detailed_scan_cache[identifier] = detail
 
-    redirect = return_url or "/ui"
+    redirect = _safe_redirect(return_url)
     separator = "&" if "?" in redirect else "?"
     return RedirectResponse(f"{redirect}{separator}detail_id={identifier}", status_code=303)
 
@@ -1111,4 +1130,4 @@ def set_ble(
     else:
         upsert_known("ble", identifier, alias, category, notes, approved)
 
-    return RedirectResponse(return_url or "/ui", status_code=303)
+    return RedirectResponse(_safe_redirect(return_url), status_code=303)
