@@ -119,7 +119,8 @@ def init_db() -> None:
         """
     CREATE TABLE IF NOT EXISTS monitor_status(
         kind TEXT,
-        identifier TEXT PRIMARY KEY,
+        identifier TEXT,
+        PRIMARY KEY(kind, identifier),
         status TEXT,
         last_seen TEXT,
         ip TEXT,
