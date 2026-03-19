@@ -101,6 +101,23 @@ def init_db() -> None:
 
     cur.execute(
         """
+    CREATE TABLE IF NOT EXISTS scan_history(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT,
+        identifier TEXT,
+        scan_type TEXT,
+        timestamp TEXT,
+        ip TEXT,
+        ports TEXT,
+        services TEXT,
+        raw TEXT,
+        info_lines TEXT
+    )
+    """
+    )
+
+    cur.execute(
+        """
     CREATE TABLE IF NOT EXISTS wifi_observations(
         bssid TEXT,
         ssid TEXT,
@@ -177,6 +194,79 @@ def record_port_scan(
         "services": services,
         "last_scan": now_ts,
     }
+
+
+def record_scan_history(
+    kind: str,
+    identifier: str,
+    scan_type: str,
+    ip: str,
+    ports: List[int],
+    services: List[str],
+    raw: str,
+    info_lines: List[str],
+) -> None:
+    con = get_connection()
+    cur = con.cursor()
+    now_ts = _now_iso()
+    cur.execute(
+        """
+    INSERT INTO scan_history(kind,identifier,scan_type,timestamp,ip,ports,services,raw,info_lines)
+    VALUES(?,?,?,?,?,?,?,?,?)
+    """,
+        (
+            kind,
+            identifier,
+            scan_type,
+            now_ts,
+            ip or "",
+            json.dumps(ports),
+            json.dumps(services),
+            raw or "",
+            json.dumps(info_lines),
+        ),
+    )
+    con.commit()
+    con.close()
+
+
+def get_scan_history(kind: str, identifier: str, limit: int = 5) -> List[Dict[str, Any]]:
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        "SELECT * FROM scan_history WHERE kind=? AND identifier=? ORDER BY timestamp DESC LIMIT ?",
+        (kind, identifier, limit),
+    )
+    rows = cur.fetchall()
+    con.close()
+    history: List[Dict[str, Any]] = []
+    for row in rows:
+        try:
+            ports = json.loads(row["ports"]) if row["ports"] else []
+        except json.JSONDecodeError:
+            ports = []
+        try:
+            services = json.loads(row["services"]) if row["services"] else []
+        except json.JSONDecodeError:
+            services = []
+        try:
+            info_lines = json.loads(row["info_lines"]) if row["info_lines"] else []
+        except json.JSONDecodeError:
+            info_lines = []
+        history.append(
+            {
+                "kind": row["kind"],
+                "identifier": row["identifier"],
+                "scan_type": row["scan_type"],
+                "timestamp": row["timestamp"],
+                "ip": row["ip"],
+                "ports": ports,
+                "services": services,
+                "raw": row["raw"],
+                "info_lines": info_lines,
+            }
+        )
+    return history
 
 
 def get_port_scan(kind: str, identifier: str) -> Optional[Dict[str, Any]]:

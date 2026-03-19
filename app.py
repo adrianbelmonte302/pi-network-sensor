@@ -10,6 +10,8 @@ from helpers.db import (
     get_recent_events,
     record_wifi_observation,
     get_wifi_observations,
+    record_scan_history,
+    get_scan_history,
 )
 from helpers.scans import scan_ports_for_ip
 import subprocess
@@ -88,6 +90,14 @@ PORT_SCAN_INTERVAL = timedelta(minutes=30)
 
 SCAN_INTERVAL_SECONDS = _int_env("SCAN_INTERVAL_SECONDS", 300)
 app.state.scan_interval = SCAN_INTERVAL_SECONDS
+MONITOR_DEFAULT_INTERVAL_MINUTES = _int_env("MONITOR_DEFAULT_INTERVAL_MINUTES", 3)
+SCAN_HISTORY_LIMIT = 6
+SCAN_TYPES = {
+    "rapido": "Rápido",
+    "medio": "Medio",
+    "profundidad": "Profundidad",
+}
+SCAN_NO_TIMEOUT = {"medio", "profundidad"}
 MONITOR_DEFAULT_INTERVAL_MINUTES = _int_env("MONITOR_DEFAULT_INTERVAL_MINUTES", 3)
 
 SENSITIVE_PORTS = {22, 23, 80, 443, 445, 554, 3389, 5900, 8080, 8443}
@@ -469,6 +479,77 @@ def _is_new(first_seen: Optional[str]) -> bool:
     return (now() - first) < timedelta(seconds=NEW_WINDOW_SECONDS)
 
 
+def _build_detail_entry(
+    identifier: str,
+    ip: Optional[str],
+    scan_type: str,
+    status: str,
+    scan_result: Optional[Dict[str, Any]] = None,
+    error: Optional[str] = None,
+    message: Optional[str] = None,
+) -> Dict[str, Any]:
+    entry: Dict[str, Any] = {
+        "identifier": identifier,
+        "ip": ip,
+        "scan_type": scan_type,
+        "scan_type_label": SCAN_TYPES.get(scan_type, scan_type.title()),
+        "status": status,
+        "timestamp": now().isoformat(),
+    }
+    if message:
+        entry["status_message"] = message
+    if scan_result:
+        entry.update(
+            {
+                "ports": scan_result.get("ports", []),
+                "services": scan_result.get("services", []),
+                "raw": scan_result.get("raw", ""),
+                "info_lines": scan_result.get("info_lines", []),
+            }
+        )
+    if error:
+        entry["error"] = error
+    return entry
+
+
+def _store_recent_detail(identifier: str, detail: Dict[str, Any]) -> None:
+    with detail_cache_lock:
+        if len(detailed_scan_cache) >= _DETAIL_CACHE_MAX:
+            detailed_scan_cache.pop(next(iter(detailed_scan_cache)))
+        detailed_scan_cache[identifier] = detail
+
+
+def _execute_scan(identifier: str, ip: str, scan_type: str) -> Dict[str, Any]:
+    port_entry = get_port_scan("lan", identifier)
+    previous_ports = set(port_entry.get("ports", [])) if port_entry else set()
+    timeout_value = None if scan_type in SCAN_NO_TIMEOUT else 60
+    try:
+        scan_result = scan_ports_for_ip(ip, profile=scan_type, timeout=timeout_value)
+        new_record = record_port_scan("lan", identifier, ip, identifier, scan_result["ports"], scan_result["services"])
+        record_scan_history(
+            "lan",
+            identifier,
+            scan_type,
+            ip,
+            scan_result["ports"],
+            scan_result["services"],
+            scan_result.get("raw", ""),
+            scan_result.get("info_lines", []),
+        )
+        new_ports = set(new_record.get("ports", [])) if new_record else set()
+        added_ports = sorted(new_ports - previous_ports)
+        if added_ports:
+            log_event("new_open_ports", "lan", identifier, f"Nuevos puertos: {', '.join(str(p) for p in added_ports)}")
+        return _build_detail_entry(identifier, ip, scan_type, "done", scan_result=scan_result)
+    except RuntimeError as exc:
+        return _build_detail_entry(identifier, ip, scan_type, "error", error=str(exc))
+    except Exception:
+        return _build_detail_entry(identifier, ip, scan_type, "error", error="Error inesperado durante el escaneo.")
+
+
+def _background_scan_worker(identifier: str, ip: str, scan_type: str) -> None:
+    detail = _execute_scan(identifier, ip, scan_type)
+    _store_recent_detail(identifier, detail)
 
 
 def get_known(kind):
@@ -1011,6 +1092,18 @@ def ui(request: Request):
             }
         )
 
+    scan_history: List[Dict[str, Any]] = []
+    if detail_id:
+        history_entries = get_scan_history("lan", detail_id, limit=SCAN_HISTORY_LIMIT)
+        for record in history_entries:
+            record["timestamp_fmt"] = format_ts(record.get("timestamp")) or record.get("timestamp")
+            ports_list = record.get("ports") or []
+            services_list = record.get("services") or []
+            record["ports_summary"] = ", ".join(str(p) for p in ports_list[:6]) if ports_list else "-"
+            record["services_summary"] = ", ".join(services_list[:3]) if services_list else "-"
+            record["info_lines"] = record.get("info_lines") or []
+        scan_history = history_entries
+
     return templates.TemplateResponse(
         "ui.html",
         {
@@ -1046,6 +1139,8 @@ def ui(request: Request):
             "local_ip": local_ip,
             "detail_scan": detail_scan,
             "detail_id": detail_id,
+            "scan_history": scan_history,
+            "scan_types": SCAN_TYPES,
             "monitor_interval_default": MONITOR_DEFAULT_INTERVAL_MINUTES,
         },
     )
@@ -1134,49 +1229,53 @@ def set_lan(
 @app.post("/lan/scan")
 def lan_manual_scan(
     identifier: str = Form(...),
+    scan_type: str = Form("rapido"),
     return_url: str = Form("/ui"),
 ):
+    scan_type = (scan_type or "rapido").lower()
+    if scan_type not in SCAN_TYPES:
+        scan_type = "rapido"
     observations = get_observations("lan")
     entry = observations.get(identifier, {})
     ip = entry.get("last_ip")
-    detail: Dict[str, Any] = {
-        "identifier": identifier,
-        "ip": ip,
-        "timestamp": now().isoformat(),
-    }
-    previous_entry = get_port_scan("lan", identifier)
-    previous_ports = set(previous_entry.get("ports", [])) if previous_entry else set()
     if not ip:
-        detail["error"] = "No hay IP conocida para este dispositivo."
+        detail = _build_detail_entry(
+            identifier,
+            ip,
+            scan_type,
+            "error",
+            error="No hay IP conocida para este dispositivo.",
+        )
+        _store_recent_detail(identifier, detail)
     else:
-        try:
-            scan_result = scan_ports_for_ip(ip)
-            record_port_scan("lan", identifier, ip, identifier, scan_result["ports"], scan_result["services"])
-            added_ports = sorted(set(scan_result.get("ports", [])) - previous_ports)
-            if added_ports:
-                log_event("new_open_ports", "lan", identifier, f"Nuevos puertos: {', '.join(str(p) for p in added_ports)}")
-            detail.update(
-                {
-                    "ports": scan_result.get("ports", []),
-                    "services": scan_result.get("services", []),
-                    "raw": scan_result.get("raw"),
-                    "info_lines": scan_result.get("info_lines", []),
-                }
+        if scan_type in SCAN_NO_TIMEOUT:
+            detail = _build_detail_entry(
+                identifier,
+                ip,
+                scan_type,
+                "running",
+                message=f"Ejecutando escaneo {SCAN_TYPES.get(scan_type)} en curso. Esto puede tardar algunos minutos.",
             )
-        except RuntimeError as exc:
-            detail["error"] = str(exc)
-        except Exception:
-            detail["error"] = "Error inesperado durante el escaneo."
-
-    with detail_cache_lock:
-        if len(detailed_scan_cache) >= _DETAIL_CACHE_MAX:
-            # evict oldest entry (insertion-order guaranteed in Python 3.7+)
-            detailed_scan_cache.pop(next(iter(detailed_scan_cache)))
-        detailed_scan_cache[identifier] = detail
-
+            _store_recent_detail(identifier, detail)
+            thread = Thread(target=_background_scan_worker, args=(identifier, ip, scan_type), daemon=True)
+            thread.start()
+        else:
+            detail = _execute_scan(identifier, ip, scan_type)
+            _store_recent_detail(identifier, detail)
     redirect = _safe_redirect(return_url)
     separator = "&" if "?" in redirect else "?"
     return RedirectResponse(f"{redirect}{separator}detail_id={identifier}", status_code=303)
+
+
+@app.get("/api/scan-status", response_class=JSONResponse)
+def scan_status(identifier: str):
+    if not identifier:
+        return JSONResponse({"status": "missing"})
+    with detail_cache_lock:
+        detail = detailed_scan_cache.get(identifier)
+    if not detail:
+        return JSONResponse({"status": "missing"})
+    return JSONResponse(detail)
 
 
 @app.post("/set/ble")

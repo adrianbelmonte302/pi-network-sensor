@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from typing import Any, Dict, List, Optional
+
 import ipaddress
 import re
 import subprocess
-from typing import Any, Dict, List
-
 
 INFO_PREFIXES = (
     "Service Info:",
@@ -17,14 +17,41 @@ INFO_PREFIXES = (
 )
 
 
-def scan_ports_for_ip(ip: str, timeout: int = 60) -> Dict[str, Any]:
+SCAN_PROFILES = {
+    "rapido": {
+        "args": ["-Pn", "-T4", "-sV", "--version-all", "--reason"],
+        "timeout": 60,
+    },
+    "medio": {
+        "args": ["-Pn", "-T3", "-sS", "-sV", "--version-light", "--reason"],
+        "timeout": None,
+    },
+    "profundidad": {
+        "args": ["-Pn", "-T2", "-A", "-p-", "--max-retries", "1", "--reason"],
+        "timeout": None,
+    },
+}
+
+
+def _build_cmd(ip: str, profile: str) -> (List[str], Optional[int]):
+    profile_key = (profile or "rapido").lower()
+    if profile_key not in SCAN_PROFILES:
+        profile_key = "rapido"
+    config = SCAN_PROFILES[profile_key]
+    timeout = config["timeout"]
+    cmd = ["nmap", *config["args"], ip]
+    return cmd, timeout
+
+
+def scan_ports_for_ip(ip: str, profile: str = "rapido", timeout: Optional[int] = 60) -> Dict[str, Any]:
     try:
         ipaddress.ip_address(ip)
     except ValueError:
         raise RuntimeError(f"Dirección IP no válida: {ip!r}")
-    cmd = ["nmap", "-Pn", "-T4", "-sV", "--version-all", "--reason", ip]
+    cmd, profile_timeout = _build_cmd(ip, profile)
+    effective_timeout = profile_timeout if timeout is None else timeout
     try:
-        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True, timeout=timeout)
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True, timeout=effective_timeout)
     except FileNotFoundError as exc:
         raise RuntimeError("nmap no está instalado o no está en PATH.") from exc
     except subprocess.CalledProcessError as exc:

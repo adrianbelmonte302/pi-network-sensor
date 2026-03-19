@@ -456,6 +456,45 @@
       box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
     }
 
+    .detail-form {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      margin-bottom: 16px;
+    }
+
+    .detail-form select {
+      min-width: 160px;
+    }
+
+    .detail-card {
+      margin-bottom: 12px;
+    }
+
+    .detail-history {
+      background: var(--surface);
+      border-radius: 14px;
+      padding: 16px;
+      border: 1px dashed rgba(59, 130, 246, 0.4);
+    }
+
+    .detail-history .panel-heading {
+      margin-bottom: 12px;
+      padding: 0;
+    }
+
+    .history-table th,
+    .history-table td {
+      font-size: 0.85rem;
+      padding: 8px 10px;
+    }
+
+    .history-table td ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
     .approved-section table {
       font-size: 0.85rem;
       margin-top: 12px;
@@ -1060,15 +1099,27 @@
               {% endfor %}
             </select>
           </label>
+          <label>
+            Tipo de escaneo
+            <select name="scan_type">
+              {% for key, label in scan_types.items() %}
+                <option value="{{ key }}" {% if detail_scan and detail_scan.scan_type == key %}selected{% elif not detail_scan and key == 'rapido' %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
           <input type="hidden" name="return_url" value="{{ request.url }}">
           <button type="submit" class="button primary">Lanzar escaneo nmap</button>
         </form>
         {% if detail_scan %}
         <div class="detail-card">
           <p><strong>{{ detail_scan.identifier }}</strong> · {{ detail_scan.ip or 'Sin IP registrada' }}</p>
+          <p>Perfil: {{ scan_types.get(detail_scan.scan_type) or detail_scan.scan_type_label }}</p>
           <p>Última ejecución: {{ detail_scan.timestamp }}</p>
-          {% if detail_scan.error %}
-            <p class="risk-badge risk-medium">{{ detail_scan.error }}</p>
+          {% set detail_status = detail_scan.status or 'done' %}
+          {% if detail_status == 'running' %}
+            <p class="status-note">{{ detail_scan.status_message or 'Escaneo en curso, espera a que se complete para ver los resultados.' }}</p>
+          {% elif detail_status == 'error' %}
+            <p class="status-note">{{ detail_scan.error or 'El escaneo falló. Revisa el historial para más detalles.' }}</p>
           {% else %}
             <p>Puertos descubiertos: {{ detail_scan.ports | join(', ') if detail_scan.ports else 'Ninguno' }}</p>
             <p>Servicios: {{ detail_scan.services | join(', ') if detail_scan.services else 'Sin servicios identificados' }}</p>
@@ -1090,6 +1141,50 @@
         </div>
         {% else %}
           <p>Selecciona un dispositivo y lanza un escaneo extendido para tener información adicional.</p>
+        {% endif %}
+        {% if scan_history %}
+        <div class="detail-history">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Histórico de escaneos</p>
+              <p class="lead">{{ scan_history|length }} registros</p>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table class="events-table history-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Tipo</th>
+                  <th>Puertos</th>
+                  <th>Servicios</th>
+                  <th>Detalles</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for record in scan_history %}
+                <tr>
+                  <td>{{ record.timestamp_fmt or record.timestamp }}</td>
+                  <td>{{ scan_types.get(record.scan_type) or record.scan_type }}</td>
+                  <td>{{ record.ports_summary }}</td>
+                  <td>{{ record.services_summary }}</td>
+                  <td>
+                    {% if record.info_lines %}
+                    <ul>
+                      {% for info in record.info_lines %}
+                        <li>{{ info }}</li>
+                      {% endfor %}
+                    </ul>
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
         {% endif %}
       </div>
     </div>
@@ -1336,9 +1431,34 @@
         }
         fetchMonitorData();
       });
-      monitorRefreshButton?.addEventListener('click', () => fetchMonitorData());
-      fetchMonitorData();
+    monitorRefreshButton?.addEventListener('click', () => fetchMonitorData());
+    fetchMonitorData();
+  }
+
+  const detailPollMeta = {{ {
+    "identifier": detail_id or "",
+    "status": detail_scan.status if detail_scan else "",
+  } | tojson }};
+
+  function pollDetailStatus(pollTimer) {
+    if (!detailPollMeta.identifier) {
+      return;
     }
-  </script>
+    fetch(`/api/scan-status?identifier=${encodeURIComponent(detailPollMeta.identifier)}`)
+      .then(response => response.ok ? response.json() : null)
+      .then(payload => {
+        if (!payload || payload.status !== "running") {
+          clearInterval(pollTimer);
+          window.location.reload();
+        }
+      })
+      .catch(() => {});
+  }
+
+  if (detailPollMeta.identifier && detailPollMeta.status === "running") {
+    const detailPollTimer = setInterval(() => pollDetailStatus(detailPollTimer), 5000);
+    pollDetailStatus(detailPollTimer);
+  }
+</script>
 </body>
 </html>
