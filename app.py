@@ -103,12 +103,7 @@ MONITOR_STATUS_LABELS = {
     "ausente": "Ausente",
 }
 monitor_stop_event = Event()
-MONITOR_HISTORY_RETENTION_DAYS = 5
-MONITOR_LOG_PATH = BASE_DIR / "logs" / "monitor_history.log"
-MONITOR_STATUS_LABELS = {
-    "presente": "Presente",
-    "ausente": "Ausente",
-}
+monitor_lock = Lock()
 SCAN_HISTORY_LIMIT = 6
 SCAN_TYPES = {
     "rapido": "Rápido",
@@ -116,7 +111,6 @@ SCAN_TYPES = {
     "profundidad": "Profundidad",
 }
 SCAN_NO_TIMEOUT = {"medio", "profundidad"}
-MONITOR_DEFAULT_INTERVAL_MINUTES = _int_env("MONITOR_DEFAULT_INTERVAL_MINUTES", 3)
 
 SENSITIVE_PORTS = {22, 23, 80, 443, 445, 554, 3389, 5900, 8080, 8443}
 
@@ -646,97 +640,98 @@ def _sync_monitor_statuses(kind: str, devices: List[Dict[str, Any]]) -> None:
 
 
 def collect_monitor_data(interval_minutes: Optional[int] = None) -> Dict[str, Any]:
-    try:
-        interval_value = int(interval_minutes) if interval_minutes is not None else MONITOR_DEFAULT_INTERVAL_MINUTES
-    except (ValueError, TypeError):
-        interval_value = MONITOR_DEFAULT_INTERVAL_MINUTES
-    interval_value = max(1, min(60, interval_value))
-    window = timedelta(minutes=interval_value)
-    observed = get_observations("lan")
-    known_devices = get_known("lan")
-    now_ts = now()
-    devices: List[Dict[str, Any]] = []
-    for identifier, obs in observed.items():
-        known_entry = known_devices.get(identifier, {})
-        last_seen_dt = _parse_iso(obs.get("last_seen"))
-        last_seen_seconds: Optional[int] = None
-        status = "ausente"
-        status_class = "missing"
-        if last_seen_dt:
-            delta = now_ts - last_seen_dt
-            last_seen_seconds = int(delta.total_seconds())
-            if delta <= window:
-                status = "presente"
-                status_class = "present"
-        current_ip = obs.get("last_ip") or "-"
-        previous_ip = obs.get("previous_ip") or ""
-        ip_note = ""
-        if previous_ip and previous_ip != current_ip and current_ip != "-":
-            ip_note = f"Anteriormente {previous_ip}"
-        status_detail = ""
-        if status == "presente":
+    with monitor_lock:
+        try:
+            interval_value = int(interval_minutes) if interval_minutes is not None else MONITOR_DEFAULT_INTERVAL_MINUTES
+        except (ValueError, TypeError):
+            interval_value = MONITOR_DEFAULT_INTERVAL_MINUTES
+        interval_value = max(1, min(60, interval_value))
+        window = timedelta(minutes=interval_value)
+        observed = get_observations("lan")
+        known_devices = get_known("lan")
+        now_ts = now()
+        devices: List[Dict[str, Any]] = []
+        for identifier, obs in observed.items():
+            known_entry = known_devices.get(identifier, {})
+            last_seen_dt = _parse_iso(obs.get("last_seen"))
+            last_seen_seconds: Optional[int] = None
+            status = "ausente"
+            status_class = "missing"
+            if last_seen_dt:
+                delta = now_ts - last_seen_dt
+                last_seen_seconds = int(delta.total_seconds())
+                if delta <= window:
+                    status = "presente"
+                    status_class = "present"
+            current_ip = obs.get("last_ip") or "-"
+            previous_ip = obs.get("previous_ip") or ""
+            ip_note = ""
             if previous_ip and previous_ip != current_ip and current_ip != "-":
-                status_detail = f"Cambio IP: {previous_ip} → {current_ip}"
+                ip_note = f"Anteriormente {previous_ip}"
+            status_detail = ""
+            if status == "presente":
+                if previous_ip and previous_ip != current_ip and current_ip != "-":
+                    status_detail = f"Cambio IP: {previous_ip} → {current_ip}"
+                else:
+                    status_detail = "Dispositivo presente"
             else:
-                status_detail = "Dispositivo presente"
-        else:
-            last_seen_fmt = format_ts(obs.get("last_seen"))
-            status_detail = f"No detectado desde {last_seen_fmt or 'desconocido'}"
-        device_name = (
-            obs.get("display_name")
-            or obs.get("vendor")
-            or known_entry.get("alias")
-            or "-"
-        )
-        devices.append(
+                last_seen_fmt = format_ts(obs.get("last_seen"))
+                status_detail = f"No detectado desde {last_seen_fmt or 'desconocido'}"
+            device_name = (
+                obs.get("display_name")
+                or obs.get("vendor")
+                or known_entry.get("alias")
+                or "-"
+            )
+            devices.append(
+                {
+                    "identifier": identifier,
+                    "ip": current_ip,
+                    "previous_ip": previous_ip,
+                    "vendor": obs.get("vendor") or "-",
+                    "alias": known_entry.get("alias", ""),
+                    "category": known_entry.get("category", ""),
+                    "approved": known_entry.get("approved", 0),
+                    "notes": known_entry.get("notes", ""),
+                    "status": status,
+                    "status_label": MONITOR_STATUS_LABELS.get(status, status.title()),
+                    "status_class": status_class,
+                    "status_detail": status_detail,
+                    "device_name": device_name,
+                    "last_seen": obs.get("last_seen"),
+                    "last_seen_fmt": format_ts(obs.get("last_seen")) or "-",
+                    "last_seen_delta": last_seen_seconds,
+                    "new": _is_new(obs.get("first_seen")),
+                    "ip_note": ip_note,
+                }
+            )
+        devices.sort(key=lambda d: (d["status"] != "presente", -(d["last_seen_delta"] or 0), d["identifier"]))
+        _sync_monitor_statuses("lan", devices)
+        cutoff_iso = (now_ts - timedelta(days=MONITOR_HISTORY_RETENTION_DAYS)).isoformat()
+        old_entries = delete_monitor_history_before("lan", cutoff_iso)
+        _append_monitor_history_log(old_entries)
+        history_entries = get_monitor_history_since("lan", cutoff_iso)
+        history_payload = [
             {
-                "identifier": identifier,
-                "ip": current_ip,
-                "previous_ip": previous_ip,
-                "vendor": obs.get("vendor") or "-",
-                "alias": known_entry.get("alias", ""),
-                "category": known_entry.get("category", ""),
-                "approved": known_entry.get("approved", 0),
-                "notes": known_entry.get("notes", ""),
-                "status": status,
-                "status_label": MONITOR_STATUS_LABELS.get(status, status.title()),
-                "status_class": status_class,
-                "status_detail": status_detail,
-                "device_name": device_name,
-                "last_seen": obs.get("last_seen"),
-                "last_seen_fmt": format_ts(obs.get("last_seen")) or "-",
-                "last_seen_delta": last_seen_seconds,
-                "new": _is_new(obs.get("first_seen")),
-                "ip_note": ip_note,
+                "timestamp": entry.get("timestamp"),
+                "timestamp_fmt": format_ts(entry.get("timestamp")) or entry.get("timestamp"),
+                "identifier": entry.get("identifier"),
+                "status": entry.get("status"),
+                "status_label": MONITOR_STATUS_LABELS.get(entry.get("status"), entry.get("status", "").title()),
+                "ip": entry.get("ip") or "-",
+                "previous_ip": entry.get("previous_ip") or "-",
+                "detail": entry.get("detail") or "-",
             }
-        )
-    devices.sort(key=lambda d: (d["status"] != "presente", -(d["last_seen_delta"] or 0), d["identifier"]))
-    _sync_monitor_statuses("lan", devices)
-    cutoff_iso = (now_ts - timedelta(days=MONITOR_HISTORY_RETENTION_DAYS)).isoformat()
-    old_entries = delete_monitor_history_before("lan", cutoff_iso)
-    _append_monitor_history_log(old_entries)
-    history_entries = get_monitor_history_since("lan", cutoff_iso)
-    history_payload = [
-        {
-            "timestamp": entry.get("timestamp"),
-            "timestamp_fmt": format_ts(entry.get("timestamp")) or entry.get("timestamp"),
-            "identifier": entry.get("identifier"),
-            "status": entry.get("status"),
-            "status_label": MONITOR_STATUS_LABELS.get(entry.get("status"), entry.get("status", "").title()),
-            "ip": entry.get("ip") or "-",
-            "previous_ip": entry.get("previous_ip") or "-",
-            "detail": entry.get("detail") or "-",
+            for entry in history_entries
+        ]
+        return {
+            "timestamp": now_ts.isoformat(),
+            "interval_minutes": interval_value,
+            "interval_seconds": interval_value * 60,
+            "devices": devices,
+            "history": history_payload,
+            "history_retention_days": MONITOR_HISTORY_RETENTION_DAYS,
         }
-        for entry in history_entries
-    ]
-    return {
-        "timestamp": now_ts.isoformat(),
-        "interval_minutes": interval_value,
-        "interval_seconds": interval_value * 60,
-        "devices": devices,
-        "history": history_payload,
-        "history_retention_days": MONITOR_HISTORY_RETENTION_DAYS,
-    }
 def get_known(kind):
     con = get_connection()
     cur = con.cursor()
@@ -1340,8 +1335,13 @@ def ui(request: Request):
 
 @app.get("/api/monitor", response_class=JSONResponse)
 def monitor_devices(interval_minutes: Optional[int] = None):
-    payload = collect_monitor_data(interval_minutes)
-    return JSONResponse(payload)
+    try:
+        payload = collect_monitor_data(interval_minutes)
+        return JSONResponse(payload)
+    except Exception as exc:
+        error_detail = str(exc)
+        print(f"Monitor API error: {error_detail}")
+        return JSONResponse({"error": error_detail, "history": [], "devices": [], "timestamp": now().isoformat(), "interval_minutes": MONITOR_DEFAULT_INTERVAL_MINUTES, "history_retention_days": MONITOR_HISTORY_RETENTION_DAYS})
 
 
 @app.post("/set/lan")

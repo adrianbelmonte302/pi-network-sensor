@@ -1415,6 +1415,9 @@
           throw new Error(`HTTP ${response.status}`);
         }
         const payload = await response.json();
+        if (payload.error) {
+          throw new Error(payload.error);
+        }
         if (monitorLastChecked && payload.timestamp) {
           monitorLastChecked.textContent = new Date(payload.timestamp).toLocaleString();
         }
