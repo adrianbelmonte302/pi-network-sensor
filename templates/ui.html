@@ -47,6 +47,39 @@
       margin-bottom: 24px;
     }
 
+    .new-device-announcement {
+      background: linear-gradient(90deg, rgba(79, 70, 229, 0.12), rgba(16, 185, 129, 0.12));
+      border: 1px solid rgba(79, 70, 229, 0.2);
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .new-device-announcement .announcement-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .new-device-announcement .announcement-item {
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: #fff;
+      border: 1px solid rgba(15, 23, 42, 0.1);
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 600;
+      transition: border 0.2s ease, transform 0.15s ease;
+    }
+
+    .new-device-announcement .announcement-item:hover {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+
     .hero h1 {
       margin: 0;
       font-size: 1.9rem;
@@ -832,10 +865,31 @@
       </div>
     </section>
 
+    {% set new_lan_list = lan|selectattr('new')|list %}
+    {% set new_ble_list = ble|selectattr('new')|list %}
     {% set lan_unknown = lan|rejectattr('known')|list|length %}
-    {% set lan_new = lan|selectattr('new')|list|length %}
+    {% set lan_new = new_lan_list|length %}
     {% set ble_unknown = ble|rejectattr('known')|list|length %}
-    {% set ble_new = ble|selectattr('new')|list|length %}
+    {% set ble_new = new_ble_list|length %}
+    {% if new_lan_list or new_ble_list %}
+    <section class="new-device-announcement">
+      <p class="lead">Se detectaron nuevos dispositivos:</p>
+      <div class="announcement-list">
+        {% for item in new_lan_list %}
+          <a class="announcement-item" href="/device/{{ item.identifier }}">
+            LAN · {{ item.device_name or item.alias or item.identifier }} ·
+            {{ item.last_ip or item.ip or 'sin IP' }}
+          </a>
+        {% endfor %}
+        {% for item in new_ble_list %}
+          <a class="announcement-item" href="/device/{{ item.identifier }}">
+            Bluetooth · {{ item.device_name or item.alias or item.identifier }} ·
+            {{ item.last_ip or 'sin IP' }}
+          </a>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
     <section class="stats-grid">
       <article class="stat-card">
         <div class="stat-card__label">LAN detectados</div>
