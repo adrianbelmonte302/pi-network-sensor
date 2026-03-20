@@ -361,6 +361,18 @@ def get_recent_events(limit: int = 25, event_type: Optional[str] = None) -> List
     return [dict(row) for row in rows]
 
 
+def get_events_for_identifier(identifier: str, limit: int = 25) -> List[Dict[str, Any]]:
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        "SELECT * FROM events WHERE identifier=? ORDER BY timestamp DESC LIMIT ?",
+        (identifier, limit),
+    )
+    rows = cur.fetchall()
+    con.close()
+    return [dict(row) for row in rows]
+
+
 def get_wifi_observation(bssid: str) -> Optional[Dict[str, Any]]:
     con = get_connection()
     cur = con.cursor()

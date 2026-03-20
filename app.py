@@ -17,6 +17,7 @@ from helpers.db import (
     delete_monitor_history_before,
     get_monitor_status,
     upsert_monitor_status,
+    get_events_for_identifier,
 )
 from helpers.scans import scan_ports_for_ip
 import subprocess
@@ -1352,6 +1353,120 @@ def monitor_devices(interval_minutes: Optional[int] = None):
         error_detail = str(exc)
         print(f"Monitor API error: {error_detail}")
         return JSONResponse({"error": error_detail, "history": [], "devices": [], "timestamp": now().isoformat(), "interval_minutes": MONITOR_DEFAULT_INTERVAL_MINUTES, "history_retention_days": MONITOR_HISTORY_RETENTION_DAYS})
+
+
+@app.get("/device/{identifier}", response_class=HTMLResponse)
+def device_detail(request: Request, identifier: str):
+    observations = get_observations("lan")
+    known_devices = get_known("lan")
+    obs = observations.get(identifier, {})
+    known = known_devices.get(identifier, {})
+    if not obs and not known:
+        return RedirectResponse("/ui")
+
+    alias = known.get("alias") or obs.get("display_name") or obs.get("vendor") or ""
+    vendor = obs.get("vendor") or known.get("alias") or "Desconocido"
+    last_seen = format_ts(obs.get("last_seen")) or "Nunca"
+    current_ip = obs.get("last_ip") or "-"
+    previous_ip = obs.get("previous_ip") or "-"
+
+    cutoff_iso = (now() - timedelta(days=MONITOR_HISTORY_RETENTION_DAYS)).isoformat()
+    history_entries = [
+        entry
+        for entry in get_monitor_history_since("lan", cutoff_iso)
+        if entry.get("identifier") == identifier
+    ]
+    history_sorted = sorted(history_entries, key=lambda entry: entry.get("timestamp") or "")
+    day_counts = OrderedDict()
+    for offset in range(MONITOR_HISTORY_RETENTION_DAYS - 1, -1, -1):
+        day = (now() - timedelta(days=offset)).date()
+        label = day.strftime("%d/%m")
+        day_counts[label] = {"entry": 0, "exit": 0, "new": 0}
+
+    online_seconds_by_day = {label: 0.0 for label in day_counts}
+    session_start: Optional[datetime] = None
+    for entry in history_sorted:
+        timestamp = _parse_iso(entry.get("timestamp"))
+        if not timestamp:
+            continue
+        day_label = timestamp.date().strftime("%d/%m")
+        if day_label not in day_counts:
+            continue
+        history_type = entry.get("history_type") or "note"
+        if history_type in {"entry", "new"}:
+            if history_type == "new":
+                day_counts[day_label]["new"] += 1
+            else:
+                day_counts[day_label]["entry"] += 1
+            if session_start is None:
+                session_start = timestamp
+        elif history_type == "exit":
+            day_counts[day_label]["exit"] += 1
+            if session_start:
+                duration = (timestamp - session_start).total_seconds()
+                duration_label = session_start.date().strftime("%d/%m")
+                if duration_label in online_seconds_by_day:
+                    online_seconds_by_day[duration_label] += max(duration, 0)
+                session_start = None
+    if session_start:
+        duration = (now() - session_start).total_seconds()
+        duration_label = session_start.date().strftime("%d/%m")
+        if duration_label in online_seconds_by_day:
+            online_seconds_by_day[duration_label] += max(duration, 0)
+
+    presence_chart = {
+        "labels": list(day_counts.keys()),
+        "entries": [counts["entry"] for counts in day_counts.values()],
+        "exits": [counts["exit"] for counts in day_counts.values()],
+        "news": [counts["new"] for counts in day_counts.values()],
+    }
+    uptime_chart = {
+        "labels": list(online_seconds_by_day.keys()),
+        "hours": [round(seconds / 3600, 2) for seconds in online_seconds_by_day.values()],
+    }
+
+    ip_history = sorted(
+        {entry.get("ip") for entry in history_entries if entry.get("ip")},
+        reverse=True,
+    )
+    recent_events = get_events_for_identifier(identifier, limit=12)
+    scan_history = get_scan_history("lan", identifier, limit=SCAN_HISTORY_LIMIT)
+    return templates.TemplateResponse(
+        "device_detail.html",
+        {
+            "request": request,
+            "device": {
+                "identifier": identifier,
+                "alias": alias,
+                "vendor": vendor,
+                "ip": current_ip,
+                "previous_ip": previous_ip,
+                "last_seen": last_seen,
+                "notes": known.get("notes", ""),
+            },
+            "history_entries": list(history_sorted),
+            "presence_chart": presence_chart,
+            "uptime_chart": uptime_chart,
+            "recent_events": recent_events,
+            "scan_history": scan_history,
+            "ip_history": ip_history,
+            "monitor_history_retention_days": MONITOR_HISTORY_RETENTION_DAYS,
+            "format_ts": format_ts,
+        },
+    )
+
+def _format_duration(seconds: float) -> str:
+    seconds = int(round(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    parts = []
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes or (hours and secs):
+        parts.append(f"{minutes}m")
+    if secs:
+        parts.append(f"{secs}s")
+    return " ".join(parts) if parts else "0s"
 
 
 @app.post("/set/lan")

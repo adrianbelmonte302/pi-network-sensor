@@ -1,0 +1,402 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Dispositivo {{ device.alias or device.identifier }}</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f3f4f8;
+      --surface: #ffffff;
+      --border: #dee2ff;
+      --text: #1f2040;
+      --muted: #6b7280;
+      --accent: #4f46e5;
+      --success: #10b981;
+      font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+    }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top, rgba(79, 70, 229, 0.15), transparent 40%), var(--bg);
+      color: var(--text);
+    }
+    main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 32px 48px;
+    }
+    .hero {
+      background: var(--surface);
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.8rem;
+    }
+    .hero p {
+      margin: 0;
+      color: #4b5563;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 15px 35px rgba(15, 23, 42, 0.08);
+      border: 1px solid rgba(220, 230, 250, 0.8);
+    }
+    .stat-card__label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--muted);
+    }
+    .stat-card__value {
+      margin: 8px 0 0;
+      font-weight: 700;
+      font-size: 1.4rem;
+    }
+    section {
+      background: var(--surface);
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 24px;
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+    }
+    .section-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .section-heading h2 {
+      margin: 0;
+      font-size: 1.25rem;
+    }
+    .table-wrapper {
+      overflow-x: auto;
+      max-width: 100%;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    thead {
+      background: rgba(79, 70, 229, 0.08);
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.12em;
+    }
+    th, td {
+      padding: 10px 14px;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+    }
+    .history-row {
+      transition: background 0.2s ease;
+    }
+    .history-row--entry td {
+      background: rgba(59, 130, 246, 0.08);
+    }
+    .history-row--exit td {
+      background: rgba(239, 68, 68, 0.08);
+    }
+    .history-row--new td {
+      background: rgba(16, 185, 129, 0.12);
+      font-weight: 600;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      background: rgba(79, 70, 229, 0.12);
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+    .detail-grid dt {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      color: var(--muted);
+      letter-spacing: 0.12em;
+    }
+    .detail-grid dd {
+      margin: 4px 0 0;
+      font-weight: 600;
+    }
+    .back-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    @media (max-width: 720px) {
+      body {
+        padding: 0 12px;
+      }
+      main {
+        padding: 24px 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="hero">
+      <div class="section-heading">
+        <h1>{{ device.alias or device.identifier }}</h1>
+        <a class="back-link" href="/ui">&larr; Volver a LAN detectadas</a>
+      </div>
+      <p>MAC: {{ device.identifier }}</p>
+      <p>IP actual: {{ device.ip }} · Última vez visto: {{ device.last_seen }}</p>
+      {% if device.previous_ip and device.previous_ip != '-' %}
+      <p>IP anterior: {{ device.previous_ip }}</p>
+      {% endif %}
+    </div>
+
+    <section>
+      <div class="detail-grid">
+        <div>
+          <dt>Alias</dt>
+          <dd>{{ device.alias or 'Sin alias' }}</dd>
+        </div>
+        <div>
+          <dt>Vendor</dt>
+          <dd>{{ device.vendor }}</dd>
+        </div>
+        <div>
+          <dt>Notas</dt>
+          <dd>{{ device.notes or '—' }}</dd>
+        </div>
+        <div>
+          <dt>Historial IPs</dt>
+          <dd>
+            {% if ip_history %}
+              {% for ip in ip_history %}
+                <div>{{ ip }}</div>
+              {% endfor %}
+            {% else %}
+              —
+            {% endif %}
+          </dd>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <h2>Gráficos de presencia</h2>
+        <span class="chip">Últimos {{ monitor_history_retention_days }} días</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:24px;">
+        <div style="flex:1 1 320px;">
+          <canvas id="presence-chart"></canvas>
+        </div>
+        <div style="flex:1 1 320px;">
+          <canvas id="uptime-chart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <h2>Histórico de presencia</h2>
+        <span class="chip">Entrada / Salida</span>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+            <th>Dispositivo</th>
+            <th>Alias</th>
+              <th>Estado</th>
+              <th>IP</th>
+              <th>Detalle</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for entry in history_entries %}
+            <tr class="history-row history-row--{{ entry.history_type or 'note' }}">
+              <td>{{ entry.timestamp | default('—') }}</td>
+              <td>{{ entry.identifier }}</td>
+              <td>{{ device.alias or 'Sin alias' }}</td>
+              <td>{{ entry.status_label or entry.status }}</td>
+              <td>
+                {{ entry.ip or '—' }}
+                {% if entry.previous_ip and entry.previous_ip != '' %}
+                <div style="font-size:0.75rem;color:#475569;">Prev: {{ entry.previous_ip }}</div>
+                {% endif %}
+              </td>
+              <td>{{ entry.detail or '—' }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="6">No hay historiales disponibles.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <h2>Eventos recientes</h2>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Hora</th>
+              <th>Tipo</th>
+              <th>Detalle</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for event in recent_events %}
+            <tr>
+              <td>{{ format_ts(event.timestamp) or event.timestamp }}</td>
+              <td>{{ event.event_type }}</td>
+              <td>{{ event.detail }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="3">No hay eventos asociados.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-heading">
+        <h2>Historial de escaneos</h2>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Tipo</th>
+              <th>Puertos</th>
+              <th>Servicios</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for record in scan_history %}
+            <tr>
+              <td>{{ format_ts(record.timestamp) or record.timestamp }}</td>
+              <td>{{ record.scan_type }}</td>
+              <td>{{ record.ports_summary }}</td>
+              <td>{{ record.services_summary }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="4">Sin escaneos registrados.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const presenceCtx = document.getElementById("presence-chart")?.getContext("2d");
+    const uptimeCtx = document.getElementById("uptime-chart")?.getContext("2d");
+    const presenceData = {
+      labels: {{ presence_chart.labels | tojson }},
+        datasets: [
+        {
+          label: "Entradas",
+          backgroundColor: "rgba(59,130,246,0.4)",
+          borderColor: "rgba(59,130,246,0.8)",
+          data: {{ presence_chart.entries | tojson }},
+          fill: true,
+          tension: 0.4,
+        },
+        {
+          label: "Primera vez",
+          backgroundColor: "rgba(16,185,129,0.3)",
+          borderColor: "rgba(16,185,129,0.8)",
+          data: {{ presence_chart.news | tojson }},
+          fill: true,
+          tension: 0.4,
+        },
+        {
+          label: "Salidas",
+          backgroundColor: "rgba(239,68,68,0.2)",
+          borderColor: "rgba(239,68,68,0.9)",
+          data: {{ presence_chart.exits | tojson }},
+          fill: true,
+          tension: 0.4,
+        },
+      ],
+    };
+    const uptimeData = {
+      labels: {{ uptime_chart.labels | tojson }},
+      datasets: [
+        {
+          label: "Horas online",
+          data: {{ uptime_chart.hours | tojson }},
+          borderColor: "rgba(16,185,129,0.9)",
+          backgroundColor: "rgba(16,185,129,0.4)",
+          fill: true,
+          tension: 0.4,
+        },
+      ],
+    };
+    if (presenceCtx) {
+      new Chart(presenceCtx, {
+        type: "line",
+        data: presenceData,
+        options: {
+          responsive: true,
+          interaction: { mode: "index", intersect: false },
+          plugins: { legend: { position: "top" } },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { stepSize: 1 },
+            },
+          },
+        },
+      });
+    }
+    if (uptimeCtx) {
+      new Chart(uptimeCtx, {
+        type: "bar",
+        data: uptimeData,
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: { display: true, text: "Horas online" },
+            },
+          },
+        },
+      });
+    }
+  </script>
+</body>
+</html>

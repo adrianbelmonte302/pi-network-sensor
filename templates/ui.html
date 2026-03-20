@@ -573,13 +573,25 @@
       font-size: 0.75rem;
     }
 
+    .column-alias {
+      min-width: 150px;
+      width: 190px;
+      white-space: nowrap;
+    }
+
+    .column-alias input[type="text"] {
+      min-width: 150px;
+      width: 100%;
+    }
+
     .column-type {
-      min-width: 220px;
+      min-width: 140px;
+      width: 150px;
       white-space: nowrap;
     }
 
     .column-type select {
-      min-width: 150px;
+      min-width: 120px;
     }
 
     .events-table th,
@@ -928,7 +940,7 @@
               <th>{{ lan_sort_link('ip','IP') }}</th>
               <th>{{ lan_sort_link('mac','MAC') }}</th>
               <th>{{ lan_sort_link('vendor','Vendor') }}</th>
-              <th>{{ lan_sort_link('alias','Alias') }}</th>
+              <th class="column-alias">{{ lan_sort_link('alias','Alias') }}</th>
               <th class="column-type">{{ lan_sort_link('category','Tipo') }}</th>
               <th>Ports</th>
               <th>Last scan</th>
