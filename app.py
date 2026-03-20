@@ -95,6 +95,7 @@ EVENT_TYPES = [
 PORT_SCAN_INTERVAL = timedelta(minutes=30)
 
 SCAN_INTERVAL_SECONDS = _int_env("SCAN_INTERVAL_SECONDS", 300)
+ABSENCE_SCAN_THRESHOLD = max(1, _int_env("ABSENCE_SCAN_THRESHOLD", 3))
 app.state.scan_interval = SCAN_INTERVAL_SECONDS
 MONITOR_DEFAULT_INTERVAL_MINUTES = _int_env("MONITOR_DEFAULT_INTERVAL_MINUTES", 3)
 MONITOR_HISTORY_RETENTION_DAYS = 5
@@ -655,7 +656,8 @@ def collect_monitor_data(interval_minutes: Optional[int] = None) -> Dict[str, An
         except (ValueError, TypeError):
             interval_value = MONITOR_DEFAULT_INTERVAL_MINUTES
         interval_value = max(1, min(60, interval_value))
-        window = timedelta(minutes=interval_value)
+        scan_interval_seconds = max(1, SCAN_INTERVAL_SECONDS)
+        absence_window = timedelta(seconds=scan_interval_seconds * ABSENCE_SCAN_THRESHOLD)
         observed = get_observations("lan")
         known_devices = get_known("lan")
         now_ts = now()
@@ -666,10 +668,12 @@ def collect_monitor_data(interval_minutes: Optional[int] = None) -> Dict[str, An
             last_seen_seconds: Optional[int] = None
             status = "ausente"
             status_class = "missing"
+            scans_since_last_seen = 0
             if last_seen_dt:
                 delta = now_ts - last_seen_dt
                 last_seen_seconds = int(delta.total_seconds())
-                if delta <= window:
+                scans_since_last_seen = int(last_seen_seconds // scan_interval_seconds)
+                if delta < absence_window:
                     status = "presente"
                     status_class = "present"
             current_ip = obs.get("last_ip") or "-"
@@ -710,6 +714,7 @@ def collect_monitor_data(interval_minutes: Optional[int] = None) -> Dict[str, An
                     "last_seen": obs.get("last_seen"),
                     "last_seen_fmt": format_ts(obs.get("last_seen")) or "-",
                     "last_seen_delta": last_seen_seconds,
+                    "scans_since_last_seen": scans_since_last_seen,
                     "new": _is_new(obs.get("first_seen")),
                     "ip_note": ip_note,
                 }
