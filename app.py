@@ -25,7 +25,7 @@ import re
 import shutil
 import os
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, tzinfo
 from typing import Optional, Dict, Any, List, Callable
 from collections import Counter, deque, OrderedDict
 from threading import Event, Lock, Thread
@@ -203,6 +203,13 @@ detailed_scan_cache: Dict[str, Dict[str, Any]] = {}
 detail_cache_lock = Lock()
 
 
+def _get_local_timezone() -> tzinfo:
+    tzinfo_value = datetime.now().astimezone().tzinfo
+    if tzinfo_value is None:
+        return timezone.utc
+    return tzinfo_value
+
+
 init_db()
 
 
@@ -216,7 +223,7 @@ def get_local_ip() -> str:
 
 
 def now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(_get_local_timezone())
 
 
 def format_ts(ts: Optional[str]) -> Optional[str]:
@@ -224,7 +231,12 @@ def format_ts(ts: Optional[str]) -> Optional[str]:
         return None
     try:
         d = datetime.fromisoformat(ts)
-        return d.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=timezone.utc)
+        local = d.astimezone(_get_local_timezone())
+        offset = local.strftime("%z")
+        zone = local.strftime("%Z") or offset
+        return local.strftime("%Y-%m-%d %H:%M:%S ") + zone
     except Exception:
         return ts
 
