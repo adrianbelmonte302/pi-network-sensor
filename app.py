@@ -696,6 +696,18 @@ def collect_monitor_data(interval_minutes: Optional[int] = None) -> Dict[str, An
                 or known_entry.get("alias")
                 or "-"
             )
+            ip_change_note = ""
+            if (
+                known_entry
+                and previous_ip
+                and current_ip != "-"
+                and current_ip != previous_ip
+            ):
+                ip_change_note = f"Cambio IP: {previous_ip} → {current_ip}"
+                if device_name and device_name != "-":
+                    device_name = f"{device_name} ({ip_change_note})"
+                else:
+                    device_name = ip_change_note
             devices.append(
                 {
                     "identifier": identifier,
