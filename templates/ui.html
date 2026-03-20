@@ -419,6 +419,26 @@
       color: var(--danger);
     }
 
+    .table-actions .detail-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      border: 1px solid rgba(79, 70, 229, 0.4);
+      padding: 6px 12px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-decoration: none;
+      background: transparent;
+      transition: border-color 0.2s ease, color 0.2s ease;
+    }
+
+    .table-actions .detail-link:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
     .risk-badge {
       border-radius: 999px;
       padding: 2px 10px;
@@ -573,21 +593,34 @@
       font-size: 0.75rem;
     }
 
+    a.device-link {
+      color: var(--accent);
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    a.device-link:hover {
+      text-decoration: underline;
+    }
+
     .column-alias {
-      min-width: 150px;
-      width: 190px;
-      white-space: nowrap;
+      min-width: 160px;
+      max-width: 260px;
+      width: 210px;
+      white-space: normal;
     }
 
     .column-alias input[type="text"] {
       min-width: 150px;
       width: 100%;
+      white-space: normal;
     }
 
     .column-type {
-      min-width: 140px;
+      min-width: 120px;
+      max-width: 180px;
       width: 150px;
-      white-space: nowrap;
+      white-space: normal;
     }
 
     .column-type select {
@@ -1018,6 +1051,7 @@
                       <input type="hidden" name="return_url" value="{{ return_url }}">
                       <button type="submit" name="action" value="save" class="save">Guardar</button>
                       <button type="submit" name="action" value="delete" class="delete" onclick="return confirm('¿Eliminar este dispositivo?');">Eliminar</button>
+                      <a class="detail-link" href="/device/{{ h.identifier }}">Ver detalle</a>
                     </div>
                   </td>
                 </form>
@@ -1482,54 +1516,70 @@
         monitorTableBody.innerHTML = '<tr><td colspan="6">No hay dispositivos registrados.</td></tr>';
         return;
       }
-        const rows = devices.map(device => {
-          const previous = monitorStatuses[device.identifier];
-          const changed = previous && previous !== device.status;
-          monitorStatuses[device.identifier] = device.status;
-          const statusChip = `
-            <span class="status-chip ${device.status_class}">
-              ${escapeHtml(device.status_label)}
-            </span>
-          `;
-          const ipNote = device.ip_note ? `<div class="monitor-ip-note">${escapeHtml(device.ip_note)}</div>` : "";
-          const noteParts = [];
-          if (device.alias) noteParts.push(device.alias);
-          if (device.category) noteParts.push(device.category);
-          if (device.notes) noteParts.push(device.notes);
-          const combinedNotes = noteParts.length ? noteParts.join(' · ') : '-';
-          return `
-            <tr class="${changed ? 'status-flash' : ''}" data-identifier="${device.identifier}">
-              <td>${escapeHtml(device.identifier)}</td>
-              <td>${escapeHtml(device.device_name)}</td>
-              <td>${escapeHtml(device.ip)}${ipNote}</td>
-              <td>${escapeHtml(device.last_seen_fmt)}</td>
-              <td>${statusChip}</td>
-              <td>${escapeHtml(combinedNotes)}</td>
-            </tr>
-          `;
-        }).join('');
+      const rows = devices.map(device => {
+        const previous = monitorStatuses[device.identifier];
+        const changed = previous && previous !== device.status;
+        monitorStatuses[device.identifier] = device.status;
+        const statusChip = `
+          <span class="status-chip ${device.status_class}">
+            ${escapeHtml(device.status_label)}
+          </span>
+        `;
+        const ipNote = device.ip_note ? `<div class="monitor-ip-note">${escapeHtml(device.ip_note)}</div>` : "";
+        const noteParts = [];
+        if (device.alias) noteParts.push(device.alias);
+        if (device.category) noteParts.push(device.category);
+        if (device.notes) noteParts.push(device.notes);
+        const combinedNotes = noteParts.length ? noteParts.join(" · ") : "-";
+        const detailUrl = device.identifier ? `/device/${encodeURIComponent(device.identifier)}` : "#";
+        const safeIdentifier = escapeHtml(device.identifier);
+        const safeName = escapeHtml(device.device_name);
+        const identifierCell = device.identifier
+          ? `<a class="device-link" href="${detailUrl}">${safeIdentifier}</a>`
+          : safeIdentifier;
+        const nameCell = device.identifier
+          ? `<a class="device-link" href="${detailUrl}">${safeName}</a>`
+          : safeName;
+        return `
+          <tr class="${changed ? 'status-flash' : ''}" data-identifier="${device.identifier}">
+            <td>${identifierCell}</td>
+            <td>${nameCell}</td>
+            <td>${escapeHtml(device.ip)}${ipNote}</td>
+            <td>${escapeHtml(device.last_seen_fmt)}</td>
+            <td>${statusChip}</td>
+            <td>${escapeHtml(combinedNotes)}</td>
+          </tr>
+        `;
+      }).join("");
       monitorTableBody.innerHTML = rows;
-      document.querySelectorAll('.status-flash').forEach(row => {
-        setTimeout(() => row.classList.remove('status-flash'), 2200);
+      document.querySelectorAll(".status-flash").forEach(row => {
+        setTimeout(() => row.classList.remove("status-flash"), 2200);
       });
     }
-
     function renderMonitorHistory(entries) {
       if (!monitorHistoryBody) {
         return;
       }
       if (!entries.length) {
-        monitorHistoryBody.innerHTML = '<tr><td colspan="5">No hay eventos recientes.</td></tr>';
+        monitorHistoryBody.innerHTML = '<tr><td colspan="6">No hay eventos recientes.</td></tr>';
         return;
       }
       const rows = entries.map(entry => {
         const historyType = entry.history_type || 'note';
         const rowClass = historyType ? `history-row history-row--${historyType}` : 'history-row';
+        const historyDetailUrl = entry.identifier ? `/device/${encodeURIComponent(entry.identifier)}` : "#";
+        const identifierCell = entry.identifier
+          ? `<a class="device-link" href="${historyDetailUrl}">${escapeHtml(entry.identifier)}</a>`
+          : escapeHtml(entry.identifier);
+        const aliasLabel = entry.alias || '-';
+        const aliasCell = entry.identifier
+          ? `<a class="device-link" href="${historyDetailUrl}">${escapeHtml(aliasLabel)}</a>`
+          : escapeHtml(aliasLabel);
         return `
           <tr class="${rowClass}">
             <td>${escapeHtml(entry.timestamp_fmt)}</td>
-            <td>${escapeHtml(entry.identifier)}</td>
-            <td>${escapeHtml(entry.alias)}</td>
+            <td>${identifierCell}</td>
+            <td>${aliasCell}</td>
             <td>${escapeHtml(entry.status_label)}</td>
             <td>
               ${escapeHtml(entry.ip)}

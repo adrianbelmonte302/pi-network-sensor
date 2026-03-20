@@ -27,7 +27,7 @@ import os
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List, Callable
-from collections import Counter, deque
+from collections import Counter, deque, OrderedDict
 from threading import Event, Lock, Thread
 import socket
 from urllib.parse import urlparse
@@ -1253,9 +1253,6 @@ def ui(request: Request):
         kind = ev.get("kind")
         identifier = ev.get("identifier")
         obs = observations_map.get(kind, {}).get(identifier) if identifier else None
-        obs_name = None
-        if obs:
-            obs_name = obs.get("vendor") or obs.get("display_name") or obs.get("ssid") or obs.get("alias")
         obs_ip = obs.get("last_ip") if obs else None
         target_parts: List[str] = []
         event_ip = ev.get("ip")
@@ -1268,12 +1265,17 @@ def ui(request: Request):
         known_alias = None
         if kind == "lan" and identifier:
             known_alias = known_lan.get(identifier, {}).get("alias")
-        if known_alias and known_alias not in target_parts:
-            obs_name = known_alias
-        if obs_name and obs_name not in target_parts:
-            target_parts.append(obs_name)
+        obs_name = (
+            known_alias
+            or (obs.get("display_name") if obs else None)
+            or (obs.get("vendor") if obs else None)
+            or (obs.get("ssid") if obs else None)
+            or (obs.get("alias") if obs else None)
+        )
         if event_ip and event_ip not in (identifier_ip, obs_ip):
             target_parts.append(event_ip)
+        if obs_name and obs_name not in target_parts:
+            target_parts.append(obs_name)
         target_label = " · ".join(target_parts) if target_parts else "-"
         risk_level = ev.get("risk_level") or get_event_risk_level(ev.get("event_type"))
         formatted_events.append(
