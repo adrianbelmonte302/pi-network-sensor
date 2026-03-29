@@ -1037,15 +1037,23 @@ def _build_presence_heatmap(history_entries: List[Dict[str, Any]], days: int = 5
     for offset in range(days):
         day = window_start_date + timedelta(days=offset)
         label = f"{weekday_labels[day.weekday()]} {day.strftime('%d/%m')}"
-        hours_present: List[bool] = []
+        hours_present: List[Dict[str, Any]] = []
         for hour in range(24):
             hour_start = datetime(day.year, day.month, day.day, hour, 0, 0, tzinfo=tz)
             hour_end = hour_start + timedelta(hours=1)
-            is_present = any(
-                interval_start < hour_end and interval_end > hour_start
-                for interval_start, interval_end in intervals
+            minutes_present = 0
+            for interval_start, interval_end in intervals:
+                overlap_start = max(interval_start, hour_start)
+                overlap_end = min(interval_end, hour_end)
+                if overlap_end > overlap_start:
+                    minutes_present += int((overlap_end - overlap_start).total_seconds() // 60)
+            minutes_present = min(60, max(0, minutes_present))
+            hours_present.append(
+                {
+                    "minutes": minutes_present,
+                    "present": minutes_present > 0,
+                }
             )
-            hours_present.append(is_present)
         days_list.append({"label": label, "hours": hours_present})
 
     return {"hours": list(range(24)), "days": days_list, "window_start": window_start}

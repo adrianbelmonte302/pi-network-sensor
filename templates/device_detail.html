@@ -13,6 +13,7 @@
       --muted: #6b7280;
       --accent: #4f46e5;
       --success: #10b981;
+      --danger: #ef4444;
       font-family: "Inter", "Segoe UI", system-ui, sans-serif;
     }
     body {
@@ -188,13 +189,42 @@
       width: 24px;
       height: 18px;
       border-radius: 4px;
-      background: #fee2e2;
-      border: 1px solid rgba(239, 68, 68, 0.2);
+      background: rgba(239, 68, 68, 0.18);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
     }
     .heatmap__cell--slot.is-present {
-      background: #86efac;
-      border-color: rgba(34, 197, 94, 0.35);
+      background: rgba(16, 185, 129, calc(0.15 + var(--presence, 0) * 0.65));
+      border-color: rgba(16, 185, 129, 0.45);
     }
+    .heatmap__cell--slot:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(15, 23, 42, 0.15);
+      border-color: rgba(79, 70, 229, 0.5);
+    }
+    .heatmap__scale {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .heatmap__scale-bar {
+      display: grid;
+      grid-template-columns: repeat(5, 18px);
+      gap: 4px;
+    }
+    .heatmap__scale-step {
+      width: 18px;
+      height: 10px;
+      border-radius: 3px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+    }
+    .heatmap__scale-step--1 { background: rgba(16, 185, 129, 0.25); }
+    .heatmap__scale-step--2 { background: rgba(16, 185, 129, 0.4); }
+    .heatmap__scale-step--3 { background: rgba(16, 185, 129, 0.55); }
+    .heatmap__scale-step--4 { background: rgba(16, 185, 129, 0.75); }
     .detail-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -277,6 +307,16 @@
         <div class="heatmap__legend">
           <span><span class="heatmap__dot heatmap__dot--present"></span>Presente</span>
           <span><span class="heatmap__dot heatmap__dot--absent"></span>Ausente</span>
+          <span class="heatmap__scale">
+            <span>Intensidad</span>
+            <span class="heatmap__scale-bar">
+              <span class="heatmap__scale-step"></span>
+              <span class="heatmap__scale-step heatmap__scale-step--1"></span>
+              <span class="heatmap__scale-step heatmap__scale-step--2"></span>
+              <span class="heatmap__scale-step heatmap__scale-step--3"></span>
+              <span class="heatmap__scale-step heatmap__scale-step--4"></span>
+            </span>
+          </span>
         </div>
         <div class="heatmap__grid">
           <div class="heatmap__row heatmap__row--header">
@@ -288,8 +328,11 @@
           {% for day in presence_heatmap.days %}
           <div class="heatmap__row">
             <div class="heatmap__cell heatmap__cell--label">{{ day.label }}</div>
-            {% for hour_present in day.hours %}
-              <div class="heatmap__cell heatmap__cell--slot {{ 'is-present' if hour_present else 'is-absent' }}"></div>
+            {% for hour_data in day.hours %}
+              {% set hour = presence_heatmap.hours[loop.index0] %}
+              <div class="heatmap__cell heatmap__cell--slot {{ 'is-present' if hour_data.present else 'is-absent' }}"
+                   style="--presence: {{ (hour_data.minutes / 60) | round(2) }};"
+                   title="{{ day.label }} · {{ hour }}:00-{{ hour + 1 }}:00 — {{ hour_data.minutes }} min presente"></div>
             {% endfor %}
           </div>
           {% endfor %}
