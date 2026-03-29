@@ -125,6 +125,76 @@
       font-weight: 600;
       color: var(--accent);
     }
+    .heatmap {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .heatmap__legend {
+      display: flex;
+      gap: 16px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      align-items: center;
+    }
+    .heatmap__dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+    }
+    .heatmap__dot--present {
+      background: #22c55e;
+    }
+    .heatmap__dot--absent {
+      background: #ef4444;
+    }
+    .heatmap__grid {
+      overflow-x: auto;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 12px;
+      background: rgba(248, 250, 252, 0.8);
+      padding: 8px;
+    }
+    .heatmap__row {
+      display: grid;
+      grid-template-columns: 110px repeat(24, 24px);
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .heatmap__row:last-child {
+      margin-bottom: 0;
+    }
+    .heatmap__row--header {
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+    .heatmap__cell {
+      text-align: center;
+    }
+    .heatmap__cell--label {
+      text-align: left;
+      font-weight: 600;
+      color: #334155;
+      font-size: 0.85rem;
+    }
+    .heatmap__cell--hour {
+      font-size: 0.65rem;
+      color: #64748b;
+    }
+    .heatmap__cell--slot {
+      width: 24px;
+      height: 18px;
+      border-radius: 4px;
+      background: #fee2e2;
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+    .heatmap__cell--slot.is-present {
+      background: #86efac;
+      border-color: rgba(34, 197, 94, 0.35);
+    }
     .detail-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -198,24 +268,38 @@
       </div>
     </section>
 
-    <section>
+        <section>
       <div class="section-heading">
-        <h2>Graficos de presencia</h2>
+        <h2>Gráficos de presencia</h2>
         <span class="chip">últimos {{ monitor_history_retention_days }} días</span>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:24px;">
-        <div style="flex:1 1 320px;">
-          <canvas id="presence-chart"></canvas>
+      <div class="heatmap">
+        <div class="heatmap__legend">
+          <span><span class="heatmap__dot heatmap__dot--present"></span>Presente</span>
+          <span><span class="heatmap__dot heatmap__dot--absent"></span>Ausente</span>
         </div>
-        <div style="flex:1 1 320px;">
-          <canvas id="uptime-chart"></canvas>
+        <div class="heatmap__grid">
+          <div class="heatmap__row heatmap__row--header">
+            <div class="heatmap__cell heatmap__cell--label"></div>
+            {% for hour in presence_heatmap.hours %}
+              <div class="heatmap__cell heatmap__cell--hour">{{ hour }}</div>
+            {% endfor %}
+          </div>
+          {% for day in presence_heatmap.days %}
+          <div class="heatmap__row">
+            <div class="heatmap__cell heatmap__cell--label">{{ day.label }}</div>
+            {% for hour_present in day.hours %}
+              <div class="heatmap__cell heatmap__cell--slot {{ 'is-present' if hour_present else 'is-absent' }}"></div>
+            {% endfor %}
+          </div>
+          {% endfor %}
         </div>
       </div>
     </section>
 
     <section>
       <div class="section-heading">
-        <h2>Historico de presencia</h2>
+        <h2>Histórico de presencia</h2>
         <span class="chip">Entrada / Salida</span>
       </div>
       <div class="table-wrapper">
@@ -318,86 +402,7 @@
     </section>
 
   </main>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script>
-    const presenceCtx = document.getElementById("presence-chart")?.getContext("2d");
-    const uptimeCtx = document.getElementById("uptime-chart")?.getContext("2d");
-    const presenceData = {
-      labels: {{ presence_chart.labels | tojson }},
-        datasets: [
-        {
-          label: "Entradas",
-          backgroundColor: "rgba(59,130,246,0.4)",
-          borderColor: "rgba(59,130,246,0.8)",
-          data: {{ presence_chart.entries | tojson }},
-          fill: true,
-          tension: 0.4,
-        },
-        {
-          label: "Primera vez",
-          backgroundColor: "rgba(16,185,129,0.3)",
-          borderColor: "rgba(16,185,129,0.8)",
-          data: {{ presence_chart.news | tojson }},
-          fill: true,
-          tension: 0.4,
-        },
-        {
-          label: "Salidas",
-          backgroundColor: "rgba(239,68,68,0.2)",
-          borderColor: "rgba(239,68,68,0.9)",
-          data: {{ presence_chart.exits | tojson }},
-          fill: true,
-          tension: 0.4,
-        },
-      ],
-    };
-    const uptimeData = {
-      labels: {{ uptime_chart.labels | tojson }},
-      datasets: [
-        {
-          label: "Horas online",
-          data: {{ uptime_chart.hours | tojson }},
-          borderColor: "rgba(16,185,129,0.9)",
-          backgroundColor: "rgba(16,185,129,0.4)",
-          fill: true,
-          tension: 0.4,
-        },
-      ],
-    };
-    if (presenceCtx) {
-      new Chart(presenceCtx, {
-        type: "line",
-        data: presenceData,
-        options: {
-          responsive: true,
-          interaction: { mode: "index", intersect: false },
-          plugins: { legend: { position: "top" } },
-          scales: {
-            y: {
-              beginAtZero: true,
-              ticks: { stepSize: 1 },
-            },
-          },
-        },
-      });
-    }
-    if (uptimeCtx) {
-      new Chart(uptimeCtx, {
-        type: "bar",
-        data: uptimeData,
-        options: {
-          responsive: true,
-          plugins: { legend: { display: false } },
-          scales: {
-            y: {
-              beginAtZero: true,
-              title: { display: true, text: "Horas online" },
-            },
-          },
-        },
-      });
-    }
-  </script>
+  
 </body>
 </html>
 

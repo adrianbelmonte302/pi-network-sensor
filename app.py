@@ -970,6 +970,87 @@ def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
         return None
 
 
+def _normalize_ts(ts: Optional[str]) -> Optional[datetime]:
+    dt = _parse_iso(ts)
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_get_local_timezone())
+
+
+def _build_presence_heatmap(history_entries: List[Dict[str, Any]], days: int = 5) -> Dict[str, Any]:
+    tz = _get_local_timezone()
+    now_ts = now()
+    window_start_date = (now_ts - timedelta(days=days - 1)).date()
+    window_start = datetime(
+        window_start_date.year,
+        window_start_date.month,
+        window_start_date.day,
+        0,
+        0,
+        0,
+        tzinfo=tz,
+    )
+    window_end = now_ts
+
+    events: List[Dict[str, Any]] = []
+    for entry in history_entries:
+        ts = _normalize_ts(entry.get("timestamp"))
+        if not ts:
+            continue
+        events.append(
+            {
+                "timestamp": ts,
+                "history_type": entry.get("history_type") or "note",
+                "status": entry.get("status"),
+            }
+        )
+    events.sort(key=lambda e: e["timestamp"])
+
+    intervals: List[tuple[datetime, datetime]] = []
+    current_start: Optional[datetime] = None
+    if events:
+        first_type = events[0]["history_type"]
+        if first_type == "exit":
+            current_start = window_start
+
+    for ev in events:
+        ts = ev["timestamp"]
+        if ts < window_start:
+            continue
+        if ev["history_type"] in {"entry", "new"}:
+            if current_start is None:
+                current_start = ts
+        elif ev["history_type"] == "exit":
+            start = current_start or window_start
+            end = ts
+            if end > window_start and start < window_end:
+                intervals.append((max(start, window_start), min(end, window_end)))
+            current_start = None
+
+    if current_start is not None:
+        intervals.append((max(current_start, window_start), window_end))
+
+    weekday_labels = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+    days_list: List[Dict[str, Any]] = []
+    for offset in range(days):
+        day = window_start_date + timedelta(days=offset)
+        label = f"{weekday_labels[day.weekday()]} {day.strftime('%d/%m')}"
+        hours_present: List[bool] = []
+        for hour in range(24):
+            hour_start = datetime(day.year, day.month, day.day, hour, 0, 0, tzinfo=tz)
+            hour_end = hour_start + timedelta(hours=1)
+            is_present = any(
+                interval_start < hour_end and interval_end > hour_start
+                for interval_start, interval_end in intervals
+            )
+            hours_present.append(is_present)
+        days_list.append({"label": label, "hours": hours_present})
+
+    return {"hours": list(range(24)), "days": days_list, "window_start": window_start}
+
+
 def _should_scan_ports(identifier: str, ip: str, known_entry: Optional[Dict[str, Any]], port_entry: Optional[Dict[str, Any]]) -> bool:
     if not ip:
         return False
@@ -1462,6 +1543,7 @@ def device_detail(request: Request, identifier: str):
     )
     recent_events = get_events_for_identifier(identifier, limit=12)
     scan_history = get_scan_history("lan", identifier, limit=SCAN_HISTORY_LIMIT)
+    presence_heatmap = _build_presence_heatmap(history_entries, days=MONITOR_HISTORY_RETENTION_DAYS)
     return templates.TemplateResponse(
         "device_detail.html",
         {
@@ -1483,6 +1565,7 @@ def device_detail(request: Request, identifier: str):
             "ip_history": ip_history,
             "monitor_history_retention_days": MONITOR_HISTORY_RETENTION_DAYS,
             "format_ts": format_ts,
+            "presence_heatmap": presence_heatmap,
         },
     )
 

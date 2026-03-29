@@ -828,14 +828,14 @@
         <input type="hidden" name="q" value="{{ search }}">
         <input type="hidden" name="filter" value="{{ filter }}">
         <input type="hidden" name="event_type" value="{{ event_type_filter or '' }}">
-        <button type="submit">Refresh LAN</button>
+        <button type="submit">Actualizar LAN</button>
       </form>
       <form method="get" action="/ui">
         <input type="hidden" name="scan" value="ble">
         <input type="hidden" name="q" value="{{ search }}">
         <input type="hidden" name="filter" value="{{ filter }}">
         <input type="hidden" name="event_type" value="{{ event_type_filter or '' }}">
-        <button type="submit">Refresh BLE</button>
+        <button type="submit">Actualizar Bluetooth</button>
       </form>
       <form method="get" action="/ui">
         <input type="hidden" name="scan" value="wifi">
@@ -1288,7 +1288,7 @@
         <div class="detail-history">
           <div class="panel-heading">
             <div>
-              <p class="eyebrow">Historico de escaneos</p>
+              <p class="eyebrow">Histórico de escaneos</p>
               <p class="lead">{{ scan_history|length }} registros</p>
             </div>
           </div>
@@ -1375,7 +1375,7 @@
       <div class="monitor-history">
         <div class="panel-heading">
           <div>
-            <p class="eyebrow">Historico de presencia</p>
+            <p class="eyebrow">Histórico de presencia</p>
             <p class="lead">últimos {{ monitor_history_retention_days }} días</p>
           </div>
         </div>
