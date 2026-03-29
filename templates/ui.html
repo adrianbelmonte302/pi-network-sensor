@@ -779,7 +779,7 @@
       {% set direction = 'desc' if lan_sort_dir == 'asc' else 'asc' %}
     {% endif %}
     {% set url = request.url.include_query_params(sort_by=field, sort_dir=direction) %}
-    <a class="table-sort-link" href="{{ url }}">{{ label }}{% if lan_sort_by == field %} <span class="sort-indicator">{{ '↑' if lan_sort_dir == 'asc' else '↓' }}</span>{% endif %}</a>
+    <a class="table-sort-link" href="{{ url }}">{{ label }}{% if lan_sort_by == field %} <span class="sort-indicator">{{ '^' if lan_sort_dir == 'asc' else 'v' }}</span>{% endif %}</a>
   {% endmacro %}
   <main>
     <header class="hero">
@@ -842,18 +842,18 @@
         <input type="hidden" name="q" value="{{ search }}">
         <input type="hidden" name="filter" value="{{ filter }}">
         <input type="hidden" name="event_type" value="{{ event_type_filter or '' }}">
-        <button type="submit">Refresh WiFi</button>
+        <button type="submit">Actualizar WiFi</button>
       </form>
-      <button type="button" class="disabled">Export known devices CSV</button>
-      <button type="button" class="disabled">Export events CSV</button>
-      <button type="button" class="disabled">Export observations CSV</button>
-      <button type="button" class="disabled">Send test Telegram</button>
+      <button type="button" class="disabled">Exportar dispositivos conocidos CSV</button>
+      <button type="button" class="disabled">Exportar eventos CSV</button>
+      <button type="button" class="disabled">Exportar observaciones CSV</button>
+      <button type="button" class="disabled">Enviar prueba de Telegram</button>
     </div>
 
     <section class="scan-panel">
       <div class="scan-status">
         {% if scan_label %}
-          Último escaneo: <strong>{{ scan_label }}</strong>
+          último escaneo: <strong>{{ scan_label }}</strong>
         {% else %}
           No se ha ejecutado un escaneo en esta vista
         {% endif %}
@@ -909,7 +909,7 @@
       <article class="stat-card">
         <div class="stat-card__label">WiFi APs</div>
         <p class="stat-card__value">{{ wifi_count }}</p>
-        <p class="stat-card__hint">Últimos {{ wifi_observations|length }}</p>
+        <p class="stat-card__hint">últimos {{ wifi_observations|length }}</p>
       </article>
       <article class="stat-card">
         <div class="stat-card__label">IP local</div>
@@ -966,8 +966,8 @@
         <p class="lead">{{ lan_summary.count or 0 }} dispositivos</p>
         <p><strong>Rango IP:</strong> {{ lan_summary.ip_range or '-' }}</p>
         <p><strong>Red estimada:</strong> {{ lan_summary.network_hint or 'Desconocida' }}</p>
-        <p><strong>Vendors:</strong> {{ lan_summary.vendor_sample or '—' }} ({{ lan_summary.vendor_count or 0 }})</p>
-        <p><small>Último escaneo automático: {{ last_scan_time or '—' }}</small></p>
+        <p><strong>Fabricantes:</strong> {{ lan_summary.vendor_sample or '—' }} ({{ lan_summary.vendor_count or 0 }})</p>
+        <p><small>último escaneo automático: {{ last_scan_time or '—' }}</small></p>
       </div>
       <div class="network-card">
         <p class="eyebrow">WiFi canales</p>
@@ -982,7 +982,7 @@
     </section>
 
     <div class="tabs" role="tablist">
-      <button type="button" class="tab-button active" data-tab="lan">LAN detectadas</button>
+      <button type="button" class="tab-button active" data-tab="lan">Dispositivos LAN</button>
       <button type="button" class="tab-button" data-tab="ble">Bluetooth</button>
       <button type="button" class="tab-button" data-tab="wifi">WiFi</button>
       <button type="button" class="tab-button" data-tab="detail">Detalle LAN</button>
@@ -1007,7 +1007,7 @@
               <option value="vendor" {% if lan_sort_by == 'vendor' %}selected{% endif %}>Vendor</option>
               <option value="alias" {% if lan_sort_by == 'alias' %}selected{% endif %}>Alias</option>
               <option value="category" {% if lan_sort_by == 'category' %}selected{% endif %}>Tipo</option>
-              <option value="last_seen" {% if lan_sort_by == 'last_seen' %}selected{% endif %}>Última aparición</option>
+              <option value="last_seen" {% if lan_sort_by == 'last_seen' %}selected{% endif %}>última aparición</option>
             </select>
           </label>
           <label>
@@ -1090,7 +1090,7 @@
                   <td>
                     {% if h.first_seen %}
                       <div>Primera: {{ h.first_seen }}</div>
-                      <div>Última: {{ h.last_seen }}</div>
+                      <div>última: {{ h.last_seen }}</div>
                       <div>IP: {{ h.last_ip or '-' }}</div>
                     {% else %}
                       <span>-</span>
@@ -1104,7 +1104,7 @@
                     <div class="table-actions">
                       <input type="hidden" name="return_url" value="{{ return_url }}">
                       <button type="submit" name="action" value="save" class="save">Guardar</button>
-                      <button type="submit" name="action" value="delete" class="delete" onclick="return confirm('¿Eliminar este dispositivo?');">Eliminar</button>
+                      <button type="submit" name="action" value="delete" class="delete" onclick="return confirm('?Eliminar este dispositivo?');">Eliminar</button>
                       <a class="detail-link" href="/device/{{ h.identifier }}">Ver detalle</a>
                     </div>
                   </td>
@@ -1119,7 +1119,7 @@
     <div class="tab-panel" data-tab="ble">
       <div class="panel-heading">
         <h2>Dispositivos Bluetooth</h2>
-        <span class="status-note">Descubrimiento Bluetooth aún no funciona de forma estable en esta Raspberry.</span>
+        <span class="status-note">Descubrimiento Bluetooth aun no funciona de forma estable en esta Raspberry.</span>
       </div>
       <div class="table-wrapper">
         <table>
@@ -1166,7 +1166,7 @@
                   <td>
                     {% if b.first_seen %}
                       <div>Primera: {{ b.first_seen }}</div>
-                      <div>Última: {{ b.last_seen }}</div>
+                      <div>última: {{ b.last_seen }}</div>
                     {% else %}
                       <span>-</span>
                     {% endif %}
@@ -1179,7 +1179,7 @@
                     <div class="table-actions">
                       <input type="hidden" name="return_url" value="{{ return_url }}">
                       <button type="submit" name="action" value="save" class="save">Guardar</button>
-                      <button type="submit" name="action" value="delete" class="delete" onclick="return confirm('¿Eliminar este dispositivo?');">Eliminar</button>
+                      <button type="submit" name="action" value="delete" class="delete" onclick="return confirm('?Eliminar este dispositivo?');">Eliminar</button>
                     </div>
                   </td>
                 </form>
@@ -1202,7 +1202,7 @@
               <th>SSID / BSSID</th>
               <th>Canal</th>
               <th>Frecuencia</th>
-              <th>Último visto</th>
+              <th>último visto</th>
             </tr>
           </thead>
           <tbody>
@@ -1226,7 +1226,7 @@
       <div class="panel-heading">
         <div>
           <p class="eyebrow">Escaneo detallado</p>
-          <p class="lead">Ejecuta un nmap/manual para cada LAN detectada</p>
+          <p class="lead">Ejecuta un nmap/manual para cada dispositivo LAN detectado</p>
         </div>
       </div>
       <div class="detail-panel">
@@ -1256,18 +1256,18 @@
         <div class="detail-card">
           <p><strong>{{ detail_scan.identifier }}</strong> · {{ detail_scan.ip or 'Sin IP registrada' }}</p>
           <p>Perfil: {{ scan_types.get(detail_scan.scan_type) or detail_scan.scan_type_label }}</p>
-          <p>Última ejecución: {{ detail_scan.timestamp }}</p>
+          <p>última ejecución: {{ detail_scan.timestamp }}</p>
           {% set detail_status = detail_scan.status or 'done' %}
           {% if detail_status == 'running' %}
             <p class="status-note">{{ detail_scan.status_message or 'Escaneo en curso, espera a que se complete para ver los resultados.' }}</p>
           {% elif detail_status == 'error' %}
-            <p class="status-note">{{ detail_scan.error or 'El escaneo falló. Revisa el historial para más detalles.' }}</p>
+            <p class="status-note">{{ detail_scan.error or 'El escaneo fallo. Revisa el historial para mas detalles.' }}</p>
           {% else %}
             <p>Puertos descubiertos: {{ detail_scan.ports | join(', ') if detail_scan.ports else 'Ninguno' }}</p>
             <p>Servicios: {{ detail_scan.services | join(', ') if detail_scan.services else 'Sin servicios identificados' }}</p>
             {% if detail_scan.info_lines %}
               <div>
-                <p><strong>Información detectada</strong></p>
+                <p><strong>Informacion detectada</strong></p>
                 <ul>
                   {% for info in detail_scan.info_lines %}
                     <li>{{ info }}</li>
@@ -1282,13 +1282,13 @@
           {% endif %}
         </div>
         {% else %}
-          <p>Selecciona un dispositivo y lanza un escaneo extendido para tener información adicional.</p>
+          <p>Selecciona un dispositivo y lanza un escaneo extendido para tener informacion adicional.</p>
         {% endif %}
         {% if scan_history %}
         <div class="detail-history">
           <div class="panel-heading">
             <div>
-              <p class="eyebrow">Histórico de escaneos</p>
+              <p class="eyebrow">Historico de escaneos</p>
               <p class="lead">{{ scan_history|length }} registros</p>
             </div>
           </div>
@@ -1339,7 +1339,7 @@
             Comprobaciones cada <span id="monitor-interval-label">{{ monitor_interval_default }}</span> minutos
           </p>
           <p class="monitor-note">
-            Detecta rápidamente cuándo llegan o se van los dispositivos que ya han sido vistos en la red.
+            Detecta rapidamente cuando llegan o se van los dispositivos que ya han sido vistos en la red.
           </p>
         </div>
         <div class="monitor-settings">
@@ -1351,7 +1351,7 @@
         </div>
       </div>
       <p class="monitor-note">
-        Última comprobación: <span id="monitor-last-checked">—</span>
+        última comprobación: <span id="monitor-last-checked">—</span>
       </p>
       <div class="table-wrapper">
         <table class="monitor-table">
@@ -1360,7 +1360,7 @@
               <th>Dispositivo</th>
               <th>Nombre</th>
               <th>IP</th>
-              <th>Última vista</th>
+              <th>última vista</th>
               <th>Estado</th>
               <th>Notas / Tipo</th>
             </tr>
@@ -1375,8 +1375,8 @@
       <div class="monitor-history">
         <div class="panel-heading">
           <div>
-            <p class="eyebrow">Histórico de presencia</p>
-            <p class="lead">Últimos {{ monitor_history_retention_days }} días</p>
+            <p class="eyebrow">Historico de presencia</p>
+            <p class="lead">últimos {{ monitor_history_retention_days }} días</p>
           </div>
         </div>
         <p class="monitor-history-note">
@@ -1426,7 +1426,7 @@
           <button type="submit" class="button secondary">Aplicar filtro</button>
         </form>
       </div>
-      <p class="status-note">También se muestran aquí logs del sistema (exploraciones, ataques o intentos de login fallidos).</p>
+      <p class="status-note">Tambien se muestran aqui logs del sistema (exploraciones, ataques o intentos de login fallidos).</p>
       {% if events %}
       <div class="table-wrapper">
         <table class="events-table">
@@ -1684,3 +1684,8 @@
 </script>
 </body>
 </html>
+
+
+
+
+

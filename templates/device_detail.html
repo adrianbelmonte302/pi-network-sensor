@@ -163,7 +163,7 @@
         <a class="back-link" href="/ui">&larr; Volver a LAN detectadas</a>
       </div>
       <p>MAC: {{ device.identifier }}</p>
-      <p>IP actual: {{ device.ip }} · Última vez visto: {{ device.last_seen }}</p>
+      <p>IP actual: {{ device.ip }} · última vez visto: {{ device.last_seen }}</p>
       {% if device.previous_ip and device.previous_ip != '-' %}
       <p>IP anterior: {{ device.previous_ip }}</p>
       {% endif %}
@@ -200,8 +200,8 @@
 
     <section>
       <div class="section-heading">
-        <h2>Gráficos de presencia</h2>
-        <span class="chip">Últimos {{ monitor_history_retention_days }} días</span>
+        <h2>Graficos de presencia</h2>
+        <span class="chip">últimos {{ monitor_history_retention_days }} días</span>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:24px;">
         <div style="flex:1 1 320px;">
@@ -215,7 +215,7 @@
 
     <section>
       <div class="section-heading">
-        <h2>Histórico de presencia</h2>
+        <h2>Historico de presencia</h2>
         <span class="chip">Entrada / Salida</span>
       </div>
       <div class="table-wrapper">
@@ -400,3 +400,7 @@
   </script>
 </body>
 </html>
+
+
+
+

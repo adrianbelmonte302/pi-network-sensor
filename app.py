@@ -247,7 +247,7 @@ def _tail_lines(path: Path, limit: int = 200) -> List[str]:
         with path.open('r', encoding='utf-8', errors='ignore') as fh:
             for line in fh:
                 lines.append(line.rstrip())
-    except FileNotFoundError:
+    except (FileNotFoundError, PermissionError, OSError):
         return []
     return list(lines)
 
@@ -645,7 +645,7 @@ def _sync_monitor_statuses(kind: str, devices: List[Dict[str, Any]]) -> None:
             should_record = True
             history_type = "entry"
             if not event_detail:
-                event_detail = f"Cambio IP: {stored_ip} → {ip}"
+                event_detail = f"Cambio IP: {stored_ip} > {ip}"
 
         if should_record:
             record_monitor_history(
@@ -696,7 +696,7 @@ def collect_monitor_data(interval_minutes: Optional[int] = None) -> Dict[str, An
             status_detail = ""
             if status == "presente":
                 if previous_ip and previous_ip != current_ip and current_ip != "-":
-                    status_detail = f"Cambio IP: {previous_ip} → {current_ip}"
+                    status_detail = f"Cambio IP: {previous_ip} > {current_ip}"
                 else:
                     status_detail = "Dispositivo presente"
             else:
@@ -715,7 +715,7 @@ def collect_monitor_data(interval_minutes: Optional[int] = None) -> Dict[str, An
                 and current_ip != "-"
                 and current_ip != previous_ip
             ):
-                ip_change_note = f"Cambio IP: {previous_ip} → {current_ip}"
+                ip_change_note = f"Cambio IP: {previous_ip} > {current_ip}"
                 if device_name and device_name != "-":
                     device_name = f"{device_name} ({ip_change_note})"
                 else:
@@ -833,12 +833,12 @@ def lan_scan() -> List[Dict[str, Any]]:
             })
             result = upsert_observation("lan", mac, ip, vendor=vendor)
             if result.get("created"):
-                log_event("new_device", "lan", mac, f"IP {ip} • vendor {vendor}")
+                log_event("new_device", "lan", mac, f"IP {ip} > vendor {vendor}")
             else:
                 if result.get("ip_changed"):
-                    log_event("ip_changed", "lan", mac, f"{result['previous_ip']} → {ip}")
+                    log_event("ip_changed", "lan", mac, f"{result['previous_ip']} > {ip}")
                 if result.get("vendor_changed"):
-                    log_event("vendor_changed", "lan", mac, f"{result['previous_vendor']} → {vendor}")
+                    log_event("vendor_changed", "lan", mac, f"{result['previous_vendor']} > {vendor}")
 
     return hosts
 
@@ -859,7 +859,7 @@ def ble_scan() -> List[Dict[str, Any]]:
         results.append({"addr": addr, "name": name, "vendor": name})
         result = upsert_observation("ble", addr, vendor=name, display_name=name)
         if result.get("display_name_changed"):
-            log_event("ble_name_changed", "ble", addr, f"{result['previous_display_name']} → {name}")
+            log_event("ble_name_changed", "ble", addr, f"{result['previous_display_name']} > {name}")
         elif result.get("created"):
             log_event("new_device", "ble", addr, f"Name {name}")
 
@@ -887,7 +887,7 @@ def ble_nearby() -> Dict[str, Any]:
         message = str(exc)
         if "NotReady" in message or "SetDiscoveryFilter failed" in message:
             raise RuntimeError(
-                "El adaptador Bluetooth no está listo. Asegúrate de que Bluetooth esté activado."
+                "El adaptador Bluetooth no esta listo. Asegurate de que Bluetooth este activado."
             ) from exc
         raise
 
@@ -1077,7 +1077,7 @@ def ui(request: Request):
                             "wifi_ssid_changed",
                             "wifi",
                             net["bssid"],
-                            f"{obs.get('previous_ssid','')} → {detail_ssid}",
+                            f"{obs.get('previous_ssid','')} > {detail_ssid}",
                         )
             except Exception as e:
                 errors.append(f"WiFi scan: {e}")
@@ -1587,3 +1587,4 @@ def set_ble(
         upsert_known("ble", identifier, alias, category, notes, approved)
 
     return RedirectResponse(_safe_redirect(return_url), status_code=303)
+
