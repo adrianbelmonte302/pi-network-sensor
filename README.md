@@ -38,6 +38,7 @@ Sensor ligero para Raspberry Pi con interfaz web para inventario de dispositivos
 - `iw`, `iwlist` (WiFi)
 - `bluez`, `bluetoothctl` (Bluetooth)
 - `python3-venv`, `python3-pip`
+- `sqlite3` (diagnóstico / soporte)
 
 ## Variables de entorno
 

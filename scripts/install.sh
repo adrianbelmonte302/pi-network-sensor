@@ -6,7 +6,7 @@ SERVICE_NAME="pi-network-sensor.service"
 
 echo "[*] Instalando dependencias del sistema..."
 sudo apt update
-sudo apt install -y python3-venv python3-pip arp-scan nmap iw wireless-tools bluez bluetooth git
+sudo apt install -y python3-venv python3-pip arp-scan nmap iw wireless-tools bluez bluetooth git sqlite3
 
 echo "[*] Creando entorno virtual..."
 cd "$APP_DIR"
