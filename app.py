@@ -766,7 +766,7 @@ def collect_monitor_data(interval_minutes: Optional[int] = None) -> Dict[str, An
             )
         devices.sort(key=lambda d: (d["status"] != "presente", -(d["last_seen_delta"] or 0), d["identifier"]))
         _sync_monitor_statuses("lan", devices)
-        cutoff_iso = (now_ts - timedelta(days=MONITOR_HISTORY_RETENTION_DAYS)).isoformat()
+        cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=MONITOR_HISTORY_RETENTION_DAYS)).isoformat()
         old_entries = delete_monitor_history_before("lan", cutoff_iso)
         _append_monitor_history_log(old_entries)
         history_entries = get_monitor_history_since("lan", cutoff_iso)
@@ -1561,7 +1561,7 @@ def device_detail(request: Request, identifier: str):
     current_ip = obs.get("last_ip") or "-"
     previous_ip = obs.get("previous_ip") or "-"
 
-    cutoff_iso = (now() - timedelta(days=MONITOR_HISTORY_RETENTION_DAYS)).isoformat()
+    cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=MONITOR_HISTORY_RETENTION_DAYS)).isoformat()
     history_entries = [
         entry
         for entry in get_monitor_history_since("lan", cutoff_iso)
