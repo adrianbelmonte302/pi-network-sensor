@@ -1567,7 +1567,7 @@ def device_detail(request: Request, identifier: str):
         for entry in get_monitor_history_since("lan", cutoff_iso)
         if entry.get("identifier") == identifier
     ]
-    history_sorted = sorted(history_entries, key=lambda entry: entry.get("timestamp") or "")
+    history_sorted = sorted(history_entries, key=lambda entry: entry.get("timestamp") or "", reverse=True)
     day_counts = OrderedDict()
     for offset in range(MONITOR_HISTORY_RETENTION_DAYS - 1, -1, -1):
         day = (now() - timedelta(days=offset)).date()
@@ -1630,6 +1630,16 @@ def device_detail(request: Request, identifier: str):
         last_seen=(monitor_status.get("last_seen") if monitor_status else obs.get("last_seen")),
         last_changed=(monitor_status.get("last_changed") if monitor_status else None),
     )
+    history_rows = []
+    for entry in history_sorted:
+        history_rows.append(
+            {
+                **entry,
+                "timestamp_fmt": format_ts(entry.get("timestamp")) or entry.get("timestamp"),
+                "timestamp_raw": entry.get("timestamp") or "",
+            }
+        )
+
     return templates.TemplateResponse(
         "device_detail.html",
         {
@@ -1643,7 +1653,7 @@ def device_detail(request: Request, identifier: str):
                 "last_seen": last_seen,
                 "notes": known.get("notes", ""),
             },
-            "history_entries": list(history_sorted),
+            "history_entries": history_rows,
             "presence_chart": presence_chart,
             "uptime_chart": uptime_chart,
             "recent_events": recent_events,

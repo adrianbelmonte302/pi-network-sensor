@@ -245,6 +245,16 @@
       text-decoration: none;
       font-weight: 600;
     }
+    .sort-button {
+      border: none;
+      background: rgba(79, 70, 229, 0.12);
+      color: var(--accent);
+      border-radius: 999px;
+      padding: 2px 6px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      margin-left: 6px;
+    }
     @media (max-width: 720px) {
       body {
         padding: 0 12px;
@@ -349,18 +359,21 @@
         <table>
           <thead>
             <tr>
-              <th>Fecha</th>
-            <th>Dispositivo</th>
-            <th>Alias</th>
+              <th>
+                Fecha
+                <button type="button" class="sort-button" id="history-sort" data-order="desc">↓</button>
+              </th>
+              <th>Dispositivo</th>
+              <th>Alias</th>
               <th>Estado</th>
               <th>IP</th>
               <th>Detalle</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="device-history-body">
             {% for entry in history_entries %}
             <tr class="history-row history-row--{{ entry.history_type or 'note' }}">
-              <td>{{ entry.timestamp | default('—') }}</td>
+              <td data-ts="{{ entry.timestamp_raw }}">{{ entry.timestamp_fmt | default('—') }}</td>
               <td>{{ entry.identifier }}</td>
               <td>{{ device.alias or 'Sin alias' }}</td>
               <td>{{ entry.status_label or entry.status }}</td>
@@ -445,7 +458,25 @@
     </section>
 
   </main>
-  
+  <script>
+    const historySortButton = document.getElementById('history-sort');
+    const historyBody = document.getElementById('device-history-body');
+    if (historySortButton && historyBody) {
+      historySortButton.addEventListener('click', () => {
+        const current = historySortButton.dataset.order || 'desc';
+        const next = current === 'desc' ? 'asc' : 'desc';
+        historySortButton.dataset.order = next;
+        historySortButton.textContent = next === 'desc' ? '↓' : '↑';
+        const rows = Array.from(historyBody.querySelectorAll('tr'));
+        const sorted = rows.sort((a, b) => {
+          const aTs = (a.querySelector('[data-ts]')?.getAttribute('data-ts') || '');
+          const bTs = (b.querySelector('[data-ts]')?.getAttribute('data-ts') || '');
+          return next === 'desc' ? bTs.localeCompare(aTs) : aTs.localeCompare(bTs);
+        });
+        sorted.forEach(row => historyBody.appendChild(row));
+      });
+    }
+  </script>
 </body>
 </html>
 
