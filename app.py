@@ -1092,9 +1092,13 @@ def _build_presence_heatmap(
     window_end = now_ts
 
     events: List[Dict[str, Any]] = []
+    sample_points: List[datetime] = []
     for entry in history_entries:
         ts = _normalize_ts(entry.get("timestamp"))
         if not ts:
+            continue
+        if entry.get("history_type") == "sample" and entry.get("status") == "presente":
+            sample_points.append(ts)
             continue
         events.append(
             {
@@ -1134,6 +1138,14 @@ def _build_presence_heatmap(
         intervals.append((max(current_start, window_start), window_end))
 
     weekday_labels = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+    sample_minutes = max(1, MONITOR_DEFAULT_INTERVAL_MINUTES)
+    sample_minutes_map: Dict[tuple[datetime.date, int], int] = {}
+    for ts in sample_points:
+        if ts < window_start or ts > window_end:
+            continue
+        key = (ts.date(), ts.hour)
+        sample_minutes_map[key] = min(60, sample_minutes_map.get(key, 0) + sample_minutes)
+
     days_list: List[Dict[str, Any]] = []
     for offset in range(days):
         day = window_start_date + timedelta(days=offset)
@@ -1148,6 +1160,7 @@ def _build_presence_heatmap(
                 overlap_end = min(interval_end, hour_end)
                 if overlap_end > overlap_start:
                     minutes_present += int((overlap_end - overlap_start).total_seconds() // 60)
+            minutes_present += sample_minutes_map.get((day, hour), 0)
             minutes_present = min(60, max(0, minutes_present))
             hours_present.append(
                 {
