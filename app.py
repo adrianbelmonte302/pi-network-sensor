@@ -13,6 +13,7 @@ from helpers.db import (
     record_scan_history,
     get_scan_history,
     record_monitor_history,
+    get_last_monitor_sample,
     record_monitor_history_at,
     get_monitor_history_since,
     delete_monitor_history_before,
@@ -385,7 +386,7 @@ def _monitor_background_worker():
     interval = MONITOR_DEFAULT_INTERVAL_MINUTES
     while not monitor_stop_event.wait(interval * 60):
         try:
-            collect_monitor_data(interval)
+            collect_monitor_data(interval, record_samples=True)
         except Exception as exc:
             print(f"Monitor background error: {exc}")
 
@@ -735,7 +736,7 @@ def _sync_monitor_statuses(kind: str, devices: List[Dict[str, Any]]) -> None:
         upsert_monitor_status(kind, identifier, status, last_seen, ip, previous_ip)
 
 
-def collect_monitor_data(interval_minutes: Optional[int] = None) -> Dict[str, Any]:
+def collect_monitor_data(interval_minutes: Optional[int] = None, record_samples: bool = False) -> Dict[str, Any]:
     with monitor_lock:
         try:
             interval_value = int(interval_minutes) if interval_minutes is not None else MONITOR_DEFAULT_INTERVAL_MINUTES
@@ -819,6 +820,22 @@ def collect_monitor_data(interval_minutes: Optional[int] = None) -> Dict[str, An
             )
         devices.sort(key=lambda d: (d["status"] != "presente", -(d["last_seen_delta"] or 0), d["identifier"]))
         _sync_monitor_statuses("lan", devices)
+        if record_samples:
+            for device in devices:
+                identifier = device["identifier"]
+                last_sample_ts = get_last_monitor_sample("lan", identifier)
+                last_sample_dt = _parse_iso(last_sample_ts) if last_sample_ts else None
+                if last_sample_dt and (now_ts - last_sample_dt).total_seconds() < interval_value * 60:
+                    continue
+                record_monitor_history(
+                    "lan",
+                    identifier,
+                    device.get("status") or "",
+                    device.get("ip") or "",
+                    device.get("previous_ip") or "",
+                    "Muestreo",
+                    history_type="sample",
+                )
         cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=MONITOR_HISTORY_RETENTION_DAYS)).isoformat()
         old_entries = delete_monitor_history_before("lan", cutoff_iso)
         _append_monitor_history_log(old_entries)

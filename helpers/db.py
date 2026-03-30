@@ -554,6 +554,24 @@ def get_monitor_history_since(kind: str, since_iso: str, limit: int = 100) -> Li
     return [dict(row) for row in rows]
 
 
+def get_last_monitor_sample(kind: str, identifier: str) -> Optional[str]:
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        """
+    SELECT timestamp FROM monitor_history
+    WHERE kind=? AND identifier=? AND history_type='sample'
+    ORDER BY timestamp DESC LIMIT 1
+    """,
+        (kind, identifier),
+    )
+    row = cur.fetchone()
+    con.close()
+    if not row:
+        return None
+    return row["timestamp"]
+
+
 def delete_monitor_history_before(kind: str, before_iso: str) -> List[Dict[str, Any]]:
     con = get_connection()
     cur = con.cursor()
