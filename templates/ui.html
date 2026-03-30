@@ -1347,7 +1347,7 @@
             Intervalo (min)
             <input type="number" id="monitor-interval" min="1" max="60" value="{{ monitor_interval_default }}">
           </label>
-          <button type="button" class="button secondary" id="monitor-refresh">Actualizar ahora</button>
+          <button type="button" class="button secondary" id="monitor-refresh">Actualizar ahora</button>\n          <button type="button" class="button secondary" id="monitor-rebuild">Reconstruir desde logs</button>
         </div>
       </div>
       <p class="monitor-note">
@@ -1504,7 +1504,7 @@
     const monitorLastChecked = document.getElementById('monitor-last-checked');
     const monitorRefreshButton = document.getElementById('monitor-refresh');
     const monitorDefaultInterval = {{ monitor_interval_default }};
-    const monitorHistoryBody = document.getElementById('monitor-history-body');
+    const monitorHistoryBody = document.getElementById('monitor-history-body');\n    const monitorRebuildButton = document.getElementById('monitor-rebuild');
     let monitorRefreshTimer;
     const monitorStatuses = {};
 
@@ -1654,6 +1654,26 @@
         fetchMonitorData();
       });
     monitorRefreshButton?.addEventListener('click', () => fetchMonitorData());
+    monitorRebuildButton?.addEventListener('click', async () => {
+      if (!confirm('Se reconstruirá el historial desde logs. ¿Continuar?')) {
+        return;
+      }
+      monitorRebuildButton.disabled = true;
+      try {
+        const response = await fetch('/api/monitor/rebuild', { method: 'POST' });
+        const payload = await response.json();
+        if (payload.error) {
+          alert(`Error reconstruyendo: ${payload.error}`);
+        } else {
+          alert(`Reconstrucción completada. Insertados: ${payload.inserted}, omitidos: ${payload.skipped}.`);
+          fetchMonitorData();
+        }
+      } catch (error) {
+        alert(`Error reconstruyendo: ${error?.message || 'Desconocido'}`);
+      } finally {
+        monitorRebuildButton.disabled = false;
+      }
+    });
     fetchMonitorData();
   }
 

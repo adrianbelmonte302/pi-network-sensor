@@ -13,11 +13,13 @@ from helpers.db import (
     record_scan_history,
     get_scan_history,
     record_monitor_history,
+    record_monitor_history_at,
     get_monitor_history_since,
     delete_monitor_history_before,
     get_monitor_status,
     upsert_monitor_status,
     get_events_for_identifier,
+    monitor_history_exists,
 )
 from helpers.scans import scan_ports_for_ip
 import subprocess
@@ -618,6 +620,25 @@ def _append_monitor_history_log(entries: List[Dict[str, Any]]) -> None:
             log_file.write(
                 f"{timestamp} {identifier} {status} ip={ip} prev={previous_ip} {detail}\n"
             )
+
+
+_MONITOR_LOG_RE = re.compile(
+    r"^(?P<ts>\S+)\s+(?P<identifier>\S+)\s+(?P<status>\S+)\s+ip=(?P<ip>\S+)\s+prev=(?P<prev>\S+)\s*(?P<detail>.*)$"
+)
+
+
+def _parse_monitor_log_line(line: str) -> Optional[Dict[str, str]]:
+    match = _MONITOR_LOG_RE.match(line.strip())
+    if not match:
+        return None
+    return {
+        "timestamp": match.group("ts"),
+        "identifier": match.group("identifier"),
+        "status": match.group("status"),
+        "ip": match.group("ip") if match.group("ip") != "-" else "",
+        "previous_ip": match.group("prev") if match.group("prev") != "-" else "",
+        "detail": (match.group("detail") or "").strip(),
+    }
 
 
 def _sync_monitor_statuses(kind: str, devices: List[Dict[str, Any]]) -> None:
@@ -1483,6 +1504,46 @@ def monitor_devices(interval_minutes: Optional[int] = None):
         error_detail = str(exc)
         print(f"Monitor API error: {error_detail}")
         return JSONResponse({"error": error_detail, "history": [], "devices": [], "timestamp": now().isoformat(), "interval_minutes": MONITOR_DEFAULT_INTERVAL_MINUTES, "history_retention_days": MONITOR_HISTORY_RETENTION_DAYS})
+
+
+@app.post("/api/monitor/rebuild", response_class=JSONResponse)
+def rebuild_monitor_history():
+    if not MONITOR_LOG_PATH.exists():
+        return JSONResponse({"error": "No existe el log de monitor.", "inserted": 0, "skipped": 0})
+    inserted = 0
+    skipped = 0
+    try:
+        with MONITOR_LOG_PATH.open("r", encoding="utf-8", errors="ignore") as fh:
+            for line in fh:
+                parsed = _parse_monitor_log_line(line)
+                if not parsed:
+                    skipped += 1
+                    continue
+                if monitor_history_exists(
+                    "lan",
+                    parsed["identifier"],
+                    parsed["status"],
+                    parsed["timestamp"],
+                    parsed["ip"],
+                    parsed["previous_ip"],
+                    parsed["detail"],
+                ):
+                    skipped += 1
+                    continue
+                record_monitor_history_at(
+                    "lan",
+                    parsed["identifier"],
+                    parsed["status"],
+                    parsed["timestamp"],
+                    parsed["ip"],
+                    parsed["previous_ip"],
+                    parsed["detail"],
+                    history_type="note",
+                )
+                inserted += 1
+    except Exception as exc:
+        return JSONResponse({"error": str(exc), "inserted": inserted, "skipped": skipped})
+    return JSONResponse({"inserted": inserted, "skipped": skipped})
 
 
 @app.get("/device/{identifier}", response_class=HTMLResponse)

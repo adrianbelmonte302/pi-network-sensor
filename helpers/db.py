@@ -456,6 +456,53 @@ def record_monitor_history(
     con.close()
 
 
+def monitor_history_exists(
+    kind: str,
+    identifier: str,
+    status: str,
+    timestamp: str,
+    ip: str,
+    previous_ip: str,
+    detail: str,
+) -> bool:
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        """
+    SELECT 1 FROM monitor_history
+    WHERE kind=? AND identifier=? AND status=? AND timestamp=? AND ip=? AND previous_ip=? AND detail=?
+    LIMIT 1
+    """,
+        (kind, identifier, status, timestamp, ip or "", previous_ip or "", detail or ""),
+    )
+    row = cur.fetchone()
+    con.close()
+    return bool(row)
+
+
+def record_monitor_history_at(
+    kind: str,
+    identifier: str,
+    status: str,
+    timestamp: str,
+    ip: str,
+    previous_ip: str,
+    detail: str,
+    history_type: str = "",
+) -> None:
+    con = get_connection()
+    cur = con.cursor()
+    cur.execute(
+        """
+    INSERT INTO monitor_history(kind,identifier,status,timestamp,ip,previous_ip,detail,history_type)
+    VALUES(?,?,?,?,?,?,?,?)
+    """,
+        (kind, identifier, status, timestamp, ip or "", previous_ip or "", detail or "", history_type or ""),
+    )
+    con.commit()
+    con.close()
+
+
 def get_monitor_status(kind: str, identifier: str) -> Optional[Dict[str, Any]]:
     con = get_connection()
     cur = con.cursor()
