@@ -58,6 +58,7 @@ BASH = shutil.which("bash") or "/usr/bin/bash"
 TIMEOUT = shutil.which("timeout") or "/usr/bin/timeout"
 IW_CMD = shutil.which("iw") or "/usr/sbin/iw"
 IWLIST_CMD = shutil.which("iwlist") or "/sbin/iwlist"
+JOURNALCTL = shutil.which("journalctl")
 
 def _int_env(name: str, default: int) -> int:
     value = os.environ.get(name)
@@ -413,6 +414,19 @@ def _parse_log_timestamp(line: str) -> Optional[str]:
         return None
 
 
+def _parse_journal_timestamp(line: str) -> Optional[str]:
+    match = re.match(r"^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})", line)
+    if not match:
+        return None
+    ts_str = match.group(1)
+    try:
+        parsed = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+        parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.isoformat()
+    except ValueError:
+        return None
+
+
 def _match_system_event(line: str) -> Optional[str]:
     normalized = line.lower()
     for event_type, keywords in SYSTEM_LOG_KEYWORDS.items():
@@ -449,6 +463,34 @@ def get_system_events(limit: int = 25, event_type_filter: Optional[str] = None) 
             )
             if len(events) >= limit:
                 break
+    if events:
+        return events
+    if not JOURNALCTL:
+        return events
+    try:
+        journal_out = run([JOURNALCTL, "-n", "300", "--no-pager", "-o", "short-iso"], timeout=6)
+    except Exception:
+        return events
+    for line in journal_out.splitlines():
+        detected = _match_system_event(line)
+        if not detected:
+            continue
+        if event_type_filter and detected != event_type_filter:
+            continue
+        timestamp = _parse_journal_timestamp(line) or now().isoformat()
+        ip_match = re.search(r"(\d{1,3}(?:\.\d{1,3}){3})", line)
+        events.append(
+            {
+                "timestamp": timestamp,
+                "event_type": detected,
+                "kind": "system",
+                "identifier": "journalctl",
+                "detail": line,
+                "ip": ip_match.group(1) if ip_match else None,
+            }
+        )
+        if len(events) >= limit:
+            break
     return events
 
 
