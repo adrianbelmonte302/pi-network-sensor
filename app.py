@@ -711,6 +711,7 @@ def _sync_monitor_statuses(kind: str, devices: List[Dict[str, Any]]) -> None:
         stored_status = get_monitor_status(kind, identifier)
         stored_status_value = stored_status.get("status") if stored_status else None
         stored_ip = stored_status.get("ip") if stored_status else ""
+        stored_last_changed = stored_status.get("last_changed") if stored_status else None
 
         ip_changed = bool(ip and stored_ip and ip != stored_ip)
         should_record = stored_status_value != status
@@ -737,7 +738,18 @@ def _sync_monitor_statuses(kind: str, devices: List[Dict[str, Any]]) -> None:
                 history_type=history_type,
             )
 
-        upsert_monitor_status(kind, identifier, status, last_seen, ip, previous_ip)
+        last_changed_value = stored_last_changed
+        if stored_status_value is None or status != stored_status_value:
+            last_changed_value = now_utc().isoformat()
+        upsert_monitor_status(
+            kind,
+            identifier,
+            status,
+            last_seen,
+            ip,
+            previous_ip,
+            last_changed=last_changed_value,
+        )
 
 
 def collect_monitor_data(interval_minutes: Optional[int] = None, record_samples: bool = False) -> Dict[str, Any]:
@@ -1070,7 +1082,7 @@ def _normalize_ts(ts: Optional[str]) -> Optional[datetime]:
     if not dt:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=_get_local_timezone())
     return dt.astimezone(_get_local_timezone())
 
 

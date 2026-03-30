@@ -521,10 +521,11 @@ def upsert_monitor_status(
     last_seen: Optional[str],
     ip: str,
     previous_ip: str,
+    last_changed: Optional[str] = None,
 ) -> None:
     con = get_connection()
     cur = con.cursor()
-    now_ts = _now_iso()
+    now_ts = last_changed or _now_iso()
     cur.execute(
         """
     INSERT INTO monitor_status(kind,identifier,status,last_seen,ip,previous_ip,last_changed)
