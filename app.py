@@ -241,6 +241,10 @@ def now() -> datetime:
     return datetime.now(_get_local_timezone())
 
 
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def format_ts(ts: Optional[str]) -> Optional[str]:
     if not ts:
         return None
@@ -510,7 +514,7 @@ def _check_command(path: str, friendly: str):
 
 
 def upsert_observation(kind: str, identifier: str, ip: Optional[str] = None, vendor: Optional[str] = None, display_name: Optional[str] = None):
-    now_ts = now().isoformat()
+    now_ts = now_utc().isoformat()
     con = get_connection()
     cur = con.cursor()
 
@@ -751,7 +755,7 @@ def collect_monitor_data(interval_minutes: Optional[int] = None, record_samples:
         devices: List[Dict[str, Any]] = []
         for identifier, obs in observed.items():
             known_entry = known_devices.get(identifier, {})
-            last_seen_dt = _parse_iso(obs.get("last_seen"))
+            last_seen_dt = _normalize_ts(obs.get("last_seen"))
             last_seen_seconds: Optional[int] = None
             status = "ausente"
             status_class = "missing"
