@@ -1676,10 +1676,17 @@ def device_detail(request: Request, identifier: str):
     recent_events = get_events_for_identifier(identifier, limit=12)
     scan_history = get_scan_history("lan", identifier, limit=SCAN_HISTORY_LIMIT)
     monitor_status = get_monitor_status("lan", identifier)
+    derived_status = None
+    last_seen_dt = _normalize_ts(obs.get("last_seen"))
+    if last_seen_dt:
+        scan_interval_seconds = max(1, SCAN_INTERVAL_SECONDS)
+        absence_window = timedelta(seconds=scan_interval_seconds * ABSENCE_SCAN_THRESHOLD)
+        if (now() - last_seen_dt) < absence_window:
+            derived_status = "presente"
     presence_heatmap = _build_presence_heatmap(
         history_entries,
         days=MONITOR_HISTORY_RETENTION_DAYS,
-        current_status=(monitor_status.get("status") if monitor_status else None),
+        current_status=(derived_status or (monitor_status.get("status") if monitor_status else None)),
         last_seen=(monitor_status.get("last_seen") if monitor_status else obs.get("last_seen")),
         last_changed=(monitor_status.get("last_changed") if monitor_status else None),
     )
