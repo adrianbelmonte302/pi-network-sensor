@@ -979,7 +979,13 @@ def _normalize_ts(ts: Optional[str]) -> Optional[datetime]:
     return dt.astimezone(_get_local_timezone())
 
 
-def _build_presence_heatmap(history_entries: List[Dict[str, Any]], days: int = 5) -> Dict[str, Any]:
+def _build_presence_heatmap(
+    history_entries: List[Dict[str, Any]],
+    days: int = 5,
+    current_status: Optional[str] = None,
+    last_seen: Optional[str] = None,
+    last_changed: Optional[str] = None,
+) -> Dict[str, Any]:
     tz = _get_local_timezone()
     now_ts = now()
     window_start_date = (now_ts - timedelta(days=days - 1)).date()
@@ -1014,6 +1020,10 @@ def _build_presence_heatmap(history_entries: List[Dict[str, Any]], days: int = 5
         first_type = events[0]["history_type"]
         if first_type == "exit":
             current_start = window_start
+    else:
+        if current_status == "presente":
+            seed_ts = _normalize_ts(last_changed) or _normalize_ts(last_seen) or window_start
+            current_start = max(window_start, seed_ts)
 
     for ev in events:
         ts = ev["timestamp"]
@@ -1551,7 +1561,14 @@ def device_detail(request: Request, identifier: str):
     )
     recent_events = get_events_for_identifier(identifier, limit=12)
     scan_history = get_scan_history("lan", identifier, limit=SCAN_HISTORY_LIMIT)
-    presence_heatmap = _build_presence_heatmap(history_entries, days=MONITOR_HISTORY_RETENTION_DAYS)
+    monitor_status = get_monitor_status("lan", identifier)
+    presence_heatmap = _build_presence_heatmap(
+        history_entries,
+        days=MONITOR_HISTORY_RETENTION_DAYS,
+        current_status=(monitor_status.get("status") if monitor_status else None),
+        last_seen=(monitor_status.get("last_seen") if monitor_status else obs.get("last_seen")),
+        last_changed=(monitor_status.get("last_changed") if monitor_status else None),
+    )
     return templates.TemplateResponse(
         "device_detail.html",
         {
