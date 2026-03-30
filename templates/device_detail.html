@@ -353,7 +353,10 @@
     <section>
       <div class="section-heading">
         <h2>Histórico de presencia</h2>
-        <span class="chip">Entrada / Salida</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span class="chip">Entrada / Salida</span>
+          <span class="chip" style="background:rgba(148,163,184,0.2);color:#475569;">Ocultando muestreos</span>
+        </div>
       </div>
       <div class="table-wrapper">
         <table>
@@ -372,11 +375,12 @@
           </thead>
           <tbody id="device-history-body">
             {% for entry in history_entries %}
+            {% if entry.history_type != 'sample' %}
             <tr class="history-row history-row--{{ entry.history_type or 'note' }}">
               <td data-ts="{{ entry.timestamp_raw }}">{{ entry.timestamp_fmt | default('—') }}</td>
               <td>{{ entry.identifier }}</td>
               <td>{{ device.alias or 'Sin alias' }}</td>
-              <td>{{ entry.status_label or entry.status }}</td>
+              <td>{{ entry.history_label or entry.status_label or entry.status }}</td>
               <td>
                 {{ entry.ip or '—' }}
                 {% if entry.previous_ip and entry.previous_ip != '' %}
@@ -385,6 +389,7 @@
               </td>
               <td>{{ entry.detail or '—' }}</td>
             </tr>
+            {% endif %}
             {% else %}
             <tr>
               <td colspan="6">No hay historiales disponibles.</td>

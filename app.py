@@ -1714,6 +1714,12 @@ def device_detail(request: Request, identifier: str):
                 **entry,
                 "timestamp_fmt": format_ts(entry.get("timestamp")) or entry.get("timestamp"),
                 "timestamp_raw": entry.get("timestamp") or "",
+                "history_label": {
+                    "entry": "Entrada",
+                    "exit": "Salida",
+                    "new": "Nuevo",
+                    "sample": "Muestreo",
+                }.get(entry.get("history_type") or "", "Nota"),
             }
         )
 
