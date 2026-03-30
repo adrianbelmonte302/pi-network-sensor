@@ -88,6 +88,7 @@ EVENT_TYPES = [
     "port_scan_failed",
     "wifi_bssid_new",
     "wifi_ssid_changed",
+    "system_login_success",
     "system_login_failure",
     "system_scan_detected",
     "system_attack_detected",
@@ -123,6 +124,7 @@ EVENT_RISK_LEVELS = {
     "system_attack_detected": "high",
     "system_scan_detected": "medium",
     "system_login_failure": "medium",
+    "system_login_success": "low",
     "new_open_ports": "medium",
     "port_scan_failed": "medium",
     "ble_name_changed": "low",
@@ -163,6 +165,12 @@ SYSTEM_LOG_PATHS = [
 ]
 
 SYSTEM_LOG_KEYWORDS = {
+    "system_login_success": [
+        "accepted password",
+        "accepted publickey",
+        "session opened for user",
+        "authentication succeeded",
+    ],
     "system_login_failure": [
         "failed password",
         "authentication failure",
@@ -186,6 +194,9 @@ SYSTEM_LOG_KEYWORDS = {
         "invalid packet",
         "malformed",
         "denied",
+        "drop",
+        "blocked",
+        "ban",
     ],
 }
 
