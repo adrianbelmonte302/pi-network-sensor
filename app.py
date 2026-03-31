@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Form
+﻿from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from helpers.db import (
@@ -1598,7 +1598,7 @@ def ui(request: Request):
 @app.get("/api/monitor", response_class=JSONResponse)
 def monitor_devices(interval_minutes: Optional[int] = None):
     try:
-        payload = collect_monitor_data(interval_minutes)
+        payload = collect_monitor_data(interval_minutes, record_samples=True)
         return JSONResponse(payload)
     except Exception as exc:
         error_detail = str(exc)
@@ -1662,7 +1662,14 @@ def device_detail(request: Request, identifier: str):
     previous_ip = obs.get("previous_ip") or "-"
 
     cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=MONITOR_HISTORY_RETENTION_DAYS)).isoformat()
-    history_entries = get_monitor_history_for_identifier_since("lan", identifier, cutoff_iso)
+    sample_window = MONITOR_HISTORY_RETENTION_DAYS * 24 * 60
+    history_limit = max(500, int(sample_window / max(1, MONITOR_DEFAULT_INTERVAL_MINUTES)) + 200)
+    history_entries = get_monitor_history_for_identifier_since("lan", identifier, cutoff_iso, limit=history_limit)
+    earliest_history_ts = None
+    for entry in history_entries:
+        ts = entry.get("timestamp")
+        if ts and (earliest_history_ts is None or ts < earliest_history_ts):
+            earliest_history_ts = ts
     history_sorted = sorted(history_entries, key=lambda entry: entry.get("timestamp") or "", reverse=True)
     day_counts = OrderedDict()
     for offset in range(MONITOR_HISTORY_RETENTION_DAYS - 1, -1, -1):
@@ -1726,12 +1733,18 @@ def device_detail(request: Request, identifier: str):
         absence_window = timedelta(seconds=scan_interval_seconds * ABSENCE_SCAN_THRESHOLD)
         if (now() - last_seen_dt) < absence_window:
             derived_status = "presente"
+    last_changed_value = None
+    if monitor_status and monitor_status.get("last_changed"):
+        last_changed_value = monitor_status.get("last_changed")
+    else:
+        last_changed_value = earliest_history_ts
+
     presence_heatmap = _build_presence_heatmap(
         history_entries,
         days=MONITOR_HISTORY_RETENTION_DAYS,
         current_status=(derived_status or (monitor_status.get("status") if monitor_status else None)),
         last_seen=(monitor_status.get("last_seen") if monitor_status else obs.get("last_seen")),
-        last_changed=(monitor_status.get("last_changed") if monitor_status else None),
+        last_changed=last_changed_value,
     )
     history_rows = []
     for entry in history_sorted:
@@ -1875,4 +1888,5 @@ def set_ble(
         upsert_known("ble", identifier, alias, category, notes, approved)
 
     return RedirectResponse(_safe_redirect(return_url), status_code=303)
+
 

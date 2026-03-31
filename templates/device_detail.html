@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html>
 <head>
   <meta charset="utf-8"/>
@@ -125,6 +125,10 @@
       font-size: 0.75rem;
       font-weight: 600;
       color: var(--accent);
+    }
+    .chip--button {
+      border: none;
+      cursor: pointer;
     }
     .heatmap {
       display: flex;
@@ -311,7 +315,7 @@
         <section>
       <div class="section-heading">
         <h2>Gráficos de presencia</h2>
-        <span class="chip">últimos {{ monitor_history_retention_days }} días</span>
+        <span class="chip">Últimos {{ monitor_history_retention_days }} días</span>
       </div>
       <div class="heatmap">
         <div class="heatmap__legend">
@@ -355,7 +359,10 @@
         <h2>Histórico de presencia</h2>
         <div style="display:flex;gap:8px;align-items:center;">
           <span class="chip">Entrada / Salida</span>
-          <span class="chip" style="background:rgba(148,163,184,0.2);color:#475569;">Ocultando muestreos</span>
+          <button type="button" class="chip chip--button" id="sample-toggle" data-show="false"
+                  style="background:rgba(148,163,184,0.2);color:#475569;">
+            Ocultando muestreos
+          </button>
         </div>
       </div>
       <div class="table-wrapper">
@@ -375,8 +382,8 @@
           </thead>
           <tbody id="device-history-body">
             {% for entry in history_entries %}
-            {% if entry.history_type != 'sample' %}
-            <tr class="history-row history-row--{{ entry.history_type or 'note' }}">
+            <tr class="history-row history-row--{{ entry.history_type or 'note' }}"
+                data-history-type="{{ entry.history_type or 'note' }}">
               <td data-ts="{{ entry.timestamp_raw }}">{{ entry.timestamp_fmt | default('—') }}</td>
               <td>{{ entry.identifier }}</td>
               <td>{{ device.alias or 'Sin alias' }}</td>
@@ -389,12 +396,14 @@
               </td>
               <td>{{ entry.detail or '—' }}</td>
             </tr>
-            {% endif %}
             {% else %}
-            <tr>
+            <tr id="history-empty">
               <td colspan="6">No hay historiales disponibles.</td>
             </tr>
             {% endfor %}
+            <tr id="history-empty-dynamic" style="display:none;">
+              <td colspan="6">No hay historiales disponibles.</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -466,13 +475,52 @@
   <script>
     const historySortButton = document.getElementById('history-sort');
     const historyBody = document.getElementById('device-history-body');
+    const sampleToggle = document.getElementById('sample-toggle');
+    const historyEmptyDynamic = document.getElementById('history-empty-dynamic');
+
+    const getHistoryRows = () =>
+      Array.from(historyBody?.querySelectorAll('tr[data-history-type]') || []);
+
+    const applyHistoryFilter = () => {
+      if (!historyBody) return;
+      const rows = getHistoryRows();
+      const hasNonSample = rows.some(row => row.dataset.historyType !== 'sample');
+      let showSamples = sampleToggle?.dataset.show === 'true';
+      if (!hasNonSample) {
+        showSamples = true;
+        if (sampleToggle) {
+          sampleToggle.dataset.show = 'true';
+          sampleToggle.textContent = 'Mostrando muestreos';
+        }
+      }
+      let visible = 0;
+      rows.forEach(row => {
+        const isSample = row.dataset.historyType === 'sample';
+        const shouldHide = isSample && !showSamples;
+        row.style.display = shouldHide ? 'none' : '';
+        if (!shouldHide) visible += 1;
+      });
+      if (historyEmptyDynamic) {
+        historyEmptyDynamic.style.display = visible === 0 ? '' : 'none';
+      }
+    };
+
+    if (sampleToggle) {
+      sampleToggle.addEventListener('click', () => {
+        const next = sampleToggle.dataset.show === 'true' ? 'false' : 'true';
+        sampleToggle.dataset.show = next;
+        sampleToggle.textContent = next === 'true' ? 'Mostrando muestreos' : 'Ocultando muestreos';
+        applyHistoryFilter();
+      });
+    }
+
     if (historySortButton && historyBody) {
       historySortButton.addEventListener('click', () => {
         const current = historySortButton.dataset.order || 'desc';
         const next = current === 'desc' ? 'asc' : 'desc';
         historySortButton.dataset.order = next;
         historySortButton.textContent = next === 'desc' ? '↓' : '↑';
-        const rows = Array.from(historyBody.querySelectorAll('tr'));
+        const rows = getHistoryRows();
         const sorted = rows.sort((a, b) => {
           const aTs = (a.querySelector('[data-ts]')?.getAttribute('data-ts') || '');
           const bTs = (b.querySelector('[data-ts]')?.getAttribute('data-ts') || '');
@@ -481,9 +529,12 @@
         sorted.forEach(row => historyBody.appendChild(row));
       });
     }
+
+    applyHistoryFilter();
   </script>
 </body>
 </html>
+
 
 
 
