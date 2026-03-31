@@ -21,6 +21,7 @@ from helpers.db import (
     upsert_monitor_status,
     get_events_for_identifier,
     monitor_history_exists,
+    get_monitor_history_for_identifier_since,
 )
 from helpers.scans import scan_ports_for_ip
 import subprocess
@@ -1661,11 +1662,7 @@ def device_detail(request: Request, identifier: str):
     previous_ip = obs.get("previous_ip") or "-"
 
     cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=MONITOR_HISTORY_RETENTION_DAYS)).isoformat()
-    history_entries = [
-        entry
-        for entry in get_monitor_history_since("lan", cutoff_iso)
-        if entry.get("identifier") == identifier
-    ]
+    history_entries = get_monitor_history_for_identifier_since("lan", identifier, cutoff_iso)
     history_sorted = sorted(history_entries, key=lambda entry: entry.get("timestamp") or "", reverse=True)
     day_counts = OrderedDict()
     for offset in range(MONITOR_HISTORY_RETENTION_DAYS - 1, -1, -1):
